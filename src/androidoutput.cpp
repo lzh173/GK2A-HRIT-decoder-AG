@@ -6,6 +6,7 @@
 #ifdef Q_OS_ANDROID
 #include <QCoreApplication>
 #include <QJniObject>
+#include <QSettings>
 #include <jni.h>
 #endif
 
@@ -16,7 +17,13 @@ AndroidOutput& AndroidOutput::instance() {
     return output;
 }
 
-AndroidOutput::AndroidOutput(QObject* parent) : QObject(parent) {}
+AndroidOutput::AndroidOutput(QObject* parent) : QObject(parent) {
+#ifdef Q_OS_ANDROID
+    QSettings settings;
+    treeUri_ = settings.value(QStringLiteral("androidOutputTreeUri")).toString();
+    display_ = settings.value(QStringLiteral("androidOutputTreeName")).toString();
+#endif
+}
 
 bool AndroidOutput::isAndroid() const {
 #ifdef Q_OS_ANDROID
@@ -69,6 +76,9 @@ void AndroidOutput::setTreeUri(const QString& uri) {
     if (uri.isEmpty() || !uri.startsWith(QLatin1String("content://"))) {
         treeUri_.clear();
         display_.clear();
+        QSettings settings;
+        settings.remove(QStringLiteral("androidOutputTreeUri"));
+        settings.remove(QStringLiteral("androidOutputTreeName"));
         emit treeUriChanged(display_);
         return;
     }
@@ -83,6 +93,9 @@ void AndroidOutput::setTreeUri(const QString& uri) {
         display_ = uri;
     }
     if (display_.isEmpty()) display_ = uri;
+    QSettings settings;
+    settings.setValue(QStringLiteral("androidOutputTreeUri"), treeUri_);
+    settings.setValue(QStringLiteral("androidOutputTreeName"), display_);
     emit treeUriChanged(display_);
 #else
     Q_UNUSED(uri);

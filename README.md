@@ -66,8 +66,11 @@ USB-host permissions and a `libusb`/SDR packaging layer, which is not part of th
 LRIT/HRIT assembly, images and L2 products are the same as on Windows.
 
 Android's document picker returns a `content://` URI, so the selected recording is copied once into the
-app cache before decoding. This needs free space equal to the recording size. Results are written to the
-app-private directory shown in the window; export them with a file manager (Android/data) or `adb pull`.
+app cache before decoding. This needs free space equal to the recording size. Choose the output
+directory with the system folder picker (Storage Access Framework); the decoder writes into an
+app-private staging area and, when it finishes, copies the complete result tree into the directory you
+selected. The grant is persisted, and the directory name is shown in the window. If Android cannot write
+there (revoked grant, full storage), the summary says so and the staging copy remains available.
 The window switches to two tabs ("解码" and "状态") and a scrollable layout on small screens.
 
 Build locally (optional, requires Qt for Android, JDK 17, Android SDK 34/NDK r26b):
