@@ -103,13 +103,22 @@ jobs:
           cmake --build build-android --parallel
           cmake --build build-android --target apk
 
-      - name: Locate APK
+      - name: Sign APK with a CI debug key
         shell: bash
         run: |
-          find build-android -name '*.apk' -type f -print
           APK=$(find build-android -name '*.apk' -type f | head -n 1)
           if [ -z "$APK" ]; then echo "No APK produced" >&2; exit 1; fi
-          cp "$APK" "NadirStation_GK2A-HRIT_decoder_${GITHUB_RUN_NUMBER}_arm64.apk"
+          echo "Unsigned APK: $APK"
+          KEYSTORE="$RUNNER_TEMP/nadirstation-debug.keystore"
+          keytool -genkeypair -v -keystore "$KEYSTORE" -storepass android -alias androiddebugkey \
+            -keypass android -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+          BUILD_TOOLS="$ANDROID_SDK_ROOT/build-tools/${ANDROID_BUILD_TOOLS}"
+          "$BUILD_TOOLS/zipalign" -f -p 4 "$APK" "$RUNNER_TEMP/aligned.apk"
+          "$BUILD_TOOLS/apksigner" sign --ks "$KEYSTORE" --ks-pass pass:android --key-pass pass:android \
+            --out "$RUNNER_TEMP/signed.apk" "$RUNNER_TEMP/aligned.apk"
+          "$BUILD_TOOLS/apksigner" verify --print-certs "$RUNNER_TEMP/signed.apk"
+          cp "$RUNNER_TEMP/signed.apk" "NadirStation_GK2A-HRIT_decoder_${GITHUB_RUN_NUMBER}_arm64.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
