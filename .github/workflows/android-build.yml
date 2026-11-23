@@ -61,7 +61,6 @@ jobs:
         uses: jurplel/install-qt-action@v4
         with:
           version: ${{ env.QT_VERSION }}
-          host: linux
           target: android
           arch: android_arm64_v8a
           cache: true
