@@ -133,10 +133,11 @@ if(HRIT_BUILD_GUI)
 
     # Static linking keeps the installed program free of extra image-library DLLs.
     function(hrit_add_openjpeg)
-        set(OPENJPEG_NAMESPACE NADIR_OPENJPEG)
         set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
         set(BUILD_CODEC OFF CACHE BOOL "" FORCE)
         set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+        # Do not override OPENJPEG_NAMESPACE: OpenJPEG uses ${OPENJPEG_NAMESPACE}_BINARY_DIR
+        # internally, and a custom name leaves it empty (tries to write /OpenJPEGConfig.cmake).
         add_subdirectory("${HRIT_TP}/openjpeg-2.5.3" "${CMAKE_BINARY_DIR}/openjpeg" EXCLUDE_FROM_ALL)
     endfunction()
     hrit_add_openjpeg()
@@ -216,7 +217,9 @@ if(HRIT_BUILD_GUI)
             "${CMAKE_CURRENT_SOURCE_DIR}/resources/maps/ne_10m_admin_0_countries_chn.geojson"
             "$<TARGET_FILE_DIR:HritDecoder>/resources/maps")
 
-    install(TARGETS HritDecoder RUNTIME DESTINATION .)
+    if(NOT ANDROID)
+        install(TARGETS HritDecoder RUNTIME DESTINATION .)
+    endif()
     install(DIRECTORY resources/maps DESTINATION resources)
     install(FILES
         installer/EULA.txt
@@ -232,7 +235,9 @@ if(HRIT_BUILD_CLI)
     add_executable(HritCli tests/test_pipeline.cpp)
     target_link_libraries(HritCli PRIVATE hrit_core)
     set_target_properties(HritCli PROPERTIES OUTPUT_NAME hrit_cli)
-    install(TARGETS HritCli RUNTIME DESTINATION .)
+    if(NOT ANDROID)
+        install(TARGETS HritCli RUNTIME DESTINATION .)
+    endif()
 endif()
 
 if(HRIT_BUILD_TESTS)
