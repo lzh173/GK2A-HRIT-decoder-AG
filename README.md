@@ -1,4 +1,4 @@
-# NadirStation GK-2A HRIT Decoder 1.2.0
+# NadirStation GK-2A HRIT Decoder 1.3.0
 
 Offline decoder for the GK-2A (GEO-KOMPSAT-2A) HRIT downlink. It reads a baseband IQ recording or a
 live USB stream from a HackRF / RTL-SDR, demodulates the 3 Msym/s QPSK signal, corrects errors
@@ -50,6 +50,35 @@ behind, the oldest samples are dropped and counted in the log rather than stalli
 The file-only repair pass is not used for live input.
 
 It is receive-only: it reads files or USB receiver samples, has no transmit function and makes no network connections.
+
+## Android (arm64)
+
+An Android build is produced by `.github/workflows/android-build.yml` on GitHub Actions; it does not
+need a local Android SDK/NDK. The APK targets **Android 9 (API 28) or newer, arm64-v8a**, and is signed
+with a CI debug key so it can be side-loaded directly:
+
+1. download the `NadirStation-GK2A-HRIT-decoder-android-arm64` artifact from the Actions run;
+2. allow installation from unknown sources and open the APK;
+3. choose a recording, set the output/key options, and start.
+
+The Android version is **file-based only for now**: the desktop HackRF/RTL-SDR USB path needs Android
+USB-host permissions and a `libusb`/SDR packaging layer, which is not part of this APK. The decoder core,
+LRIT/HRIT assembly, images and L2 products are the same as on Windows.
+
+Android's document picker returns a `content://` URI, so the selected recording is copied once into the
+app cache before decoding. This needs free space equal to the recording size. Results are written to the
+app-private directory shown in the window; export them with a file manager (Android/data) or `adb pull`.
+The window switches to two tabs ("解码" and "状态") and a scrollable layout on small screens.
+
+Build locally (optional, requires Qt for Android, JDK 17, Android SDK 34/NDK r26b):
+
+```
+$QT_ROOT_DIR/bin/qt-cmake -S . -B build-android -G Ninja \
+  -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-34 \
+  -DQT_HOST_PATH="$QT_HOST_PATH" -DHRIT_BUILD_CLI=OFF -DHRIT_BUILD_TESTS=OFF
+cmake --build build-android --parallel
+cmake --build build-android --target apk
+```
 
 Developer: AGcov (BI2QYN)
 
@@ -138,6 +167,10 @@ to `main`/`master`, every pull request and on manual dispatch:
 
 The artifacts are `NadirStation-GK2A-HRIT-decoder-win64` (portable ZIP) and
 `NadirStation-GK2A-HRIT-decoder-win64-installer` (setup executable).
+
+`.github/workflows/android-build.yml` separately installs Qt for Android, JDK 17, Android SDK 34 and
+NDK r26b on Ubuntu, cross-compiles all native libraries, builds the arm64 APK with Gradle, signs it with
+a throw-away debug key and uploads `NadirStation-GK2A-HRIT-decoder-android-arm64`.
 
 ## Using it
 

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(NadirStation_GK2A_HRIT_Decoder VERSION 1.2.0 LANGUAGES C CXX)
+project(NadirStation_GK2A_HRIT_Decoder VERSION 1.3.0 LANGUAGES C CXX)
 
 # MinGW Makefiles are single-configuration generators: default to Release so the per-sample DSP is optimised.
 if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
