@@ -15,6 +15,11 @@ option(HRIT_BUILD_CLI "Build the command-line receive-chain check (hrit_cli)" ON
 option(HRIT_BUILD_TESTS "Build the unit tests and register them with CTest" ON)
 option(HRIT_WITH_ZSTD "Read zstd-compressed ZIQ recordings (needs zstd)" ON)
 
+if(ANDROID)
+    # OpenJPEG's CMake install helpers otherwise try to write /OpenJPEGConfig.cmake.
+    set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/install" CACHE PATH "Android staging prefix" FORCE)
+endif()
+
 if(HRIT_BUILD_GUI)
     find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
     qt_standard_project_setup()
@@ -138,34 +143,31 @@ if(HRIT_BUILD_GUI)
 
     include(ExternalProject)
     set(HRIT_JPEG_BINARY "${CMAKE_BINARY_DIR}/hrit-jpeg")
+    set(_hrit_jpeg_toolchain_args)
     if(ANDROID)
-        # Cross-compiling the JPEG library with the Android NDK is simpler in-tree: ExternalProject
-        # would need the whole Android toolchain repeated in its own command line.
-        set(ENABLE_SHARED OFF CACHE BOOL "" FORCE)
-        set(ENABLE_STATIC ON CACHE BOOL "" FORCE)
-        set(WITH_SIMD OFF CACHE BOOL "" FORCE)
-        set(WITH_TURBOJPEG ON CACHE BOOL "" FORCE)
-        set(WITH_TOOLS OFF CACHE BOOL "" FORCE)
-        set(WITH_TESTS OFF CACHE BOOL "" FORCE)
-        add_subdirectory("${HRIT_TP}/libjpeg-turbo-3.1.2" "${CMAKE_BINARY_DIR}/libjpeg" EXCLUDE_FROM_ALL)
-        set(HRIT_TURBOJPEG_TARGET turbojpeg-static)
-    else()
-        ExternalProject_Add(nadir_jpeg_build
-            SOURCE_DIR "${HRIT_TP}/libjpeg-turbo-3.1.2"
-            BINARY_DIR "${HRIT_JPEG_BINARY}"
-            CMAKE_GENERATOR "${CMAKE_GENERATOR}"
-            CMAKE_ARGS -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
-                -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM} -DENABLE_SHARED=OFF -DENABLE_STATIC=ON
-                -DWITH_SIMD=OFF -DWITH_TURBOJPEG=ON
-            BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --target turbojpeg-static --parallel 4
-            INSTALL_COMMAND ""
-            BUILD_BYPRODUCTS "${HRIT_JPEG_BINARY}/${CMAKE_STATIC_LIBRARY_PREFIX}turbojpeg${CMAKE_STATIC_LIBRARY_SUFFIX}")
-        add_library(nadir_turbojpeg STATIC IMPORTED)
-        set_target_properties(nadir_turbojpeg PROPERTIES
-            IMPORTED_LOCATION "${HRIT_JPEG_BINARY}/${CMAKE_STATIC_LIBRARY_PREFIX}turbojpeg${CMAKE_STATIC_LIBRARY_SUFFIX}")
-        add_dependencies(nadir_turbojpeg nadir_jpeg_build)
-        set(HRIT_TURBOJPEG_TARGET nadir_turbojpeg)
+        list(APPEND _hrit_jpeg_toolchain_args
+            -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}
+            -DANDROID_ABI=${ANDROID_ABI}
+            -DANDROID_PLATFORM=${ANDROID_PLATFORM}
+            -DCMAKE_POSITION_INDEPENDENT_CODE=ON)
     endif()
+    ExternalProject_Add(nadir_jpeg_build
+        SOURCE_DIR "${HRIT_TP}/libjpeg-turbo-3.1.2"
+        BINARY_DIR "${HRIT_JPEG_BINARY}"
+        CMAKE_GENERATOR "${CMAKE_GENERATOR}"
+        CMAKE_ARGS -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
+            -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM} -DENABLE_SHARED=OFF -DENABLE_STATIC=ON
+            -DWITH_SIMD=OFF -DWITH_TURBOJPEG=ON -DWITH_TOOLS=OFF -DWITH_TESTS=OFF
+            ${_hrit_jpeg_toolchain_args}
+        BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --target turbojpeg-static --parallel 4
+        INSTALL_COMMAND ""
+        BUILD_BYPRODUCTS "${HRIT_JPEG_BINARY}/${CMAKE_STATIC_LIBRARY_PREFIX}turbojpeg${CMAKE_STATIC_LIBRARY_SUFFIX}")
+    add_library(nadir_turbojpeg STATIC IMPORTED)
+    set_target_properties(nadir_turbojpeg PROPERTIES
+        IMPORTED_LOCATION "${HRIT_JPEG_BINARY}/${CMAKE_STATIC_LIBRARY_PREFIX}turbojpeg${CMAKE_STATIC_LIBRARY_SUFFIX}"
+        INTERFACE_INCLUDE_DIRECTORIES "${HRIT_TP}/libjpeg-turbo-3.1.2/src")
+    add_dependencies(nadir_turbojpeg nadir_jpeg_build)
+    set(HRIT_TURBOJPEG_TARGET nadir_turbojpeg)
 
     # ---- HRIT image library (JPEG2000 / JPEG segments -> pictures, DES decryption) -------------------------------
     add_library(hrit_images STATIC src/gk2ahritimages.cpp src/des.cpp)
