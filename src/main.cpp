@@ -16,8 +16,14 @@ namespace {
 
 void applyTheme(QApplication& app) {
     app.setStyle(QStyleFactory::create(QStringLiteral("Fusion")));
+#ifdef Q_OS_ANDROID
+    QFont font = app.font();
+    font.setPointSize(10);
+    app.setFont(font);
+#else
     QFont font(QStringLiteral("Microsoft YaHei UI"), 9);
     app.setFont(font);
+#endif
     QPalette p;
     p.setColor(QPalette::Window, QColor(0xff, 0xff, 0xff));
     p.setColor(QPalette::WindowText, QColor(0x1f, 0x29, 0x33));

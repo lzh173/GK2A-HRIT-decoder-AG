@@ -41,16 +41,17 @@ $deps = @(
 
 $tarPath = ''
 $tarCommand = Get-Command tar.exe -ErrorAction SilentlyContinue
+if (-not $tarCommand) { $tarCommand = Get-Command tar -ErrorAction SilentlyContinue }
 if ($tarCommand) {
     $tarPath = $tarCommand.Source
-} else {
+} elseif ($env:SystemRoot) {
     $candidate = Join-Path $env:SystemRoot 'System32\tar.exe'
     if (Test-Path -LiteralPath $candidate) { $tarPath = $candidate }
 }
-if ([string]::IsNullOrWhiteSpace($tarPath)) { throw 'tar.exe was not found. It ships with Windows 10 1803 and later.' }
+if ([string]::IsNullOrWhiteSpace($tarPath)) { throw 'tar was not found. Windows 10 1803+ and Linux/macOS provide it.' }
 
 New-Item -ItemType Directory -Force -Path $Destination | Out-Null
-$cache = Join-Path $env:TEMP 'hrit-third-party'
+$cache = Join-Path ([System.IO.Path]::GetTempPath()) 'hrit-third-party'
 New-Item -ItemType Directory -Force -Path $cache | Out-Null
 
 foreach ($dep in $deps) {

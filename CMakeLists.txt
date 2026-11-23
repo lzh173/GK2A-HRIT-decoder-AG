@@ -138,20 +138,34 @@ if(HRIT_BUILD_GUI)
 
     include(ExternalProject)
     set(HRIT_JPEG_BINARY "${CMAKE_BINARY_DIR}/hrit-jpeg")
-    ExternalProject_Add(nadir_jpeg_build
-        SOURCE_DIR "${HRIT_TP}/libjpeg-turbo-3.1.2"
-        BINARY_DIR "${HRIT_JPEG_BINARY}"
-        CMAKE_GENERATOR "${CMAKE_GENERATOR}"
-        CMAKE_ARGS -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
-            -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM} -DENABLE_SHARED=OFF -DENABLE_STATIC=ON
-            -DWITH_SIMD=OFF -DWITH_TURBOJPEG=ON
-        BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --target turbojpeg-static --parallel 4
-        INSTALL_COMMAND ""
-        BUILD_BYPRODUCTS "${HRIT_JPEG_BINARY}/${CMAKE_STATIC_LIBRARY_PREFIX}turbojpeg${CMAKE_STATIC_LIBRARY_SUFFIX}")
-    add_library(nadir_turbojpeg STATIC IMPORTED)
-    set_target_properties(nadir_turbojpeg PROPERTIES
-        IMPORTED_LOCATION "${HRIT_JPEG_BINARY}/${CMAKE_STATIC_LIBRARY_PREFIX}turbojpeg${CMAKE_STATIC_LIBRARY_SUFFIX}")
-    add_dependencies(nadir_turbojpeg nadir_jpeg_build)
+    if(ANDROID)
+        # Cross-compiling the JPEG library with the Android NDK is simpler in-tree: ExternalProject
+        # would need the whole Android toolchain repeated in its own command line.
+        set(ENABLE_SHARED OFF CACHE BOOL "" FORCE)
+        set(ENABLE_STATIC ON CACHE BOOL "" FORCE)
+        set(WITH_SIMD OFF CACHE BOOL "" FORCE)
+        set(WITH_TURBOJPEG ON CACHE BOOL "" FORCE)
+        set(WITH_TOOLS OFF CACHE BOOL "" FORCE)
+        set(WITH_TESTS OFF CACHE BOOL "" FORCE)
+        add_subdirectory("${HRIT_TP}/libjpeg-turbo-3.1.2" "${CMAKE_BINARY_DIR}/libjpeg" EXCLUDE_FROM_ALL)
+        set(HRIT_TURBOJPEG_TARGET turbojpeg-static)
+    else()
+        ExternalProject_Add(nadir_jpeg_build
+            SOURCE_DIR "${HRIT_TP}/libjpeg-turbo-3.1.2"
+            BINARY_DIR "${HRIT_JPEG_BINARY}"
+            CMAKE_GENERATOR "${CMAKE_GENERATOR}"
+            CMAKE_ARGS -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
+                -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM} -DENABLE_SHARED=OFF -DENABLE_STATIC=ON
+                -DWITH_SIMD=OFF -DWITH_TURBOJPEG=ON
+            BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --target turbojpeg-static --parallel 4
+            INSTALL_COMMAND ""
+            BUILD_BYPRODUCTS "${HRIT_JPEG_BINARY}/${CMAKE_STATIC_LIBRARY_PREFIX}turbojpeg${CMAKE_STATIC_LIBRARY_SUFFIX}")
+        add_library(nadir_turbojpeg STATIC IMPORTED)
+        set_target_properties(nadir_turbojpeg PROPERTIES
+            IMPORTED_LOCATION "${HRIT_JPEG_BINARY}/${CMAKE_STATIC_LIBRARY_PREFIX}turbojpeg${CMAKE_STATIC_LIBRARY_SUFFIX}")
+        add_dependencies(nadir_turbojpeg nadir_jpeg_build)
+        set(HRIT_TURBOJPEG_TARGET nadir_turbojpeg)
+    endif()
 
     # ---- HRIT image library (JPEG2000 / JPEG segments -> pictures, DES decryption) -------------------------------
     add_library(hrit_images STATIC src/gk2ahritimages.cpp src/des.cpp)
@@ -161,7 +175,7 @@ if(HRIT_BUILD_GUI)
         "${HRIT_TP}/libjpeg-turbo-3.1.2/src"
         "${HRIT_JPEG_BINARY}")
     target_compile_definitions(hrit_images PRIVATE OPJ_STATIC)
-    target_link_libraries(hrit_images PUBLIC hrit_core Qt6::Core Qt6::Gui openjp2 nadir_turbojpeg)
+    target_link_libraries(hrit_images PUBLIC hrit_core Qt6::Core Qt6::Gui openjp2 ${HRIT_TURBOJPEG_TARGET})
 
     # ---- the application -----------------------------------------------------------------------------------------
     set(APP_SOURCES
@@ -175,10 +189,22 @@ if(HRIT_BUILD_GUI)
         enable_language(RC)
         list(APPEND APP_SOURCES resources/app.rc)
     endif()
-    qt_add_executable(HritDecoder WIN32 ${APP_SOURCES})
+    if(ANDROID)
+        qt_add_executable(HritDecoder ${APP_SOURCES})
+    else()
+        qt_add_executable(HritDecoder WIN32 ${APP_SOURCES})
+    endif()
     set_target_properties(HritDecoder PROPERTIES OUTPUT_NAME NadirStation_GK2A-HRIT_decoder)
     target_compile_options(HritDecoder PRIVATE ${HRIT_WARN})
     target_link_libraries(HritDecoder PRIVATE hrit_images hrit_core Qt6::Core Qt6::Gui Qt6::Widgets)
+    if(ANDROID)
+        set_target_properties(HritDecoder PROPERTIES
+            QT_ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android"
+            QT_ANDROID_MIN_SDK_VERSION 23
+            QT_ANDROID_TARGET_SDK_VERSION 34
+            QT_ANDROID_VERSION_CODE 10300
+            QT_ANDROID_VERSION_NAME "${PROJECT_VERSION}")
+    endif()
 
     # The coastline overlay reads these two files next to the program.
     add_custom_command(TARGET HritDecoder POST_BUILD

@@ -7,6 +7,7 @@
 #include "qtpath.h"
 
 #include <QApplication>
+#include <QBoxLayout>
 #include <QCheckBox>
 #include <QCloseEvent>
 #include <QComboBox>
@@ -35,11 +36,13 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QResizeEvent>
+#include <QScrollArea>
 #include <QSettings>
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QStandardPaths>
 #include <QStatusBar>
+#include <QTabWidget>
 #include <QTextBrowser>
 #include <QTimer>
 #include <QUrl>
@@ -59,6 +62,27 @@ QString humanSize(qint64 bytes) {
     return mb >= 1024.0 ? QStringLiteral("%1 GB").arg(mb / 1024.0, 0, 'f', 2) : QStringLiteral("%1 MB").arg(mb, 0, 'f', 1);
 }
 
+// Android's document picker can hand back a content:// URI. The decoder works on a filesystem
+// path, so copy the selected document into the app cache once and open that copy.
+QString materializeInputFile(const QString& path) {
+#ifdef Q_OS_ANDROID
+    if (path.startsWith(QLatin1String("content://")) || !QFileInfo(path).isFile()) {
+        QFile in(path);
+        if (!in.open(QIODevice::ReadOnly)) return {};
+        const QString cache = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+        if (cache.isEmpty()) return {};
+        QDir().mkpath(cache);
+        QString name = QFileInfo(path).fileName();
+        if (name.isEmpty()) name = QStringLiteral("recording");
+        const QString dst = QDir(cache).filePath(name);
+        QFile::remove(dst);
+        if (!in.copy(dst)) return {};
+        return dst;
+    }
+#endif
+    return path;
+}
+
 QLabel* valueLabel() {
     auto* l = new QLabel(QStringLiteral("—"));
     l->setObjectName(QStringLiteral("Value"));
@@ -72,8 +96,13 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     setWindowTitle(QStringLiteral("%1 %2").arg(QString::fromUtf8(appinfo::kProductName), QString::fromUtf8(appinfo::kVersion)));
     setWindowIcon(QIcon(QStringLiteral(":/icon.png")));
     setAcceptDrops(true);
+#ifdef Q_OS_ANDROID
+    resize(420, 760);
+    setMinimumSize(360, 640);
+#else
     resize(1240, 780);
     setMinimumSize(1200, 740);
+#endif
     buildUi();
 
     worker_ = new DecodeWorker;
@@ -105,7 +134,11 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     thread_.start();
 
     QSettings settings;
+#ifdef Q_OS_ANDROID
+    outputEdit_->setText(outputRoot());
+#else
     outputEdit_->setText(settings.value(QStringLiteral("outputDir"), outputRoot()).toString());
+#endif
     keyEdit_->setText(settings.value(QStringLiteral("keyFile")).toString());
     rateSpin_->setValue(settings.value(QStringLiteral("manualRateMsps"), 6.0).toDouble());
     dcBlock_->setChecked(settings.value(QStringLiteral("dcBlock"), true).toBool());
@@ -139,20 +172,30 @@ MainWindow::~MainWindow() {
 
 void MainWindow::buildUi() {
     auto* central = new QWidget;
+#ifdef Q_OS_ANDROID
+    auto* root = new QVBoxLayout(central);
+#else
     auto* root = new QHBoxLayout(central);
+#endif
     root->setContentsMargins(12, 12, 12, 8);
     root->setSpacing(12);
 
     // ---- left: what to decode ---------------------------------------------------------------------------
     auto* left = new QWidget;
+#ifndef Q_OS_ANDROID
     left->setFixedWidth(344);
+#endif
     auto* leftLayout = new QVBoxLayout(left);
     leftLayout->setContentsMargins(0, 0, 0, 0);
     leftLayout->setSpacing(10);
 
     auto* title = new QLabel(QStringLiteral("GK-2A HRIT 解码器"));
     title->setObjectName(QStringLiteral("AppTitle"));
+#ifdef Q_OS_ANDROID
+    auto* subtitle = new QLabel(QStringLiteral("解码基带录音 → LRIT 文件 → 云图与 L2 产品"));
+#else
     auto* subtitle = new QLabel(QStringLiteral("解码基带录音或 HackRF / RTL-SDR 实时流 → LRIT 文件 → 云图与 L2 产品"));
+#endif
     subtitle->setObjectName(QStringLiteral("Muted"));
     subtitle->setWordWrap(true);
     leftLayout->addWidget(title);
@@ -162,8 +205,10 @@ void MainWindow::buildUi() {
     auto* sourceLayout = new QVBoxLayout(sourceBox);
     sourceCombo_ = new QComboBox;
     sourceCombo_->addItem(QStringLiteral("文件录音"));
+#ifndef Q_OS_ANDROID
     sourceCombo_->addItem(QStringLiteral("HackRF（USB 实时）"));
     sourceCombo_->addItem(QStringLiteral("RTL-SDR（USB 实时）"));
+#endif
     sourceLayout->addWidget(sourceCombo_);
     leftLayout->addWidget(sourceBox);
 
@@ -282,6 +327,15 @@ void MainWindow::buildUi() {
     outLayout->addLayout(outRow);
     openOutBtn_ = new QPushButton(QStringLiteral("打开输出文件夹"));
     outLayout->addWidget(openOutBtn_);
+#ifdef Q_OS_ANDROID
+    browseOut->setVisible(false);
+    openOutBtn_->setVisible(false);
+    outputEdit_->setReadOnly(true);
+    auto* outHint = new QLabel(QStringLiteral("Android 将结果保存在应用私有目录；可用文件管理器或 adb 导出。"));
+    outHint->setObjectName(QStringLiteral("Muted"));
+    outHint->setWordWrap(true);
+    outLayout->addWidget(outHint);
+#endif
     leftLayout->addWidget(outBox);
 
     auto* keyBox = new QGroupBox(QStringLiteral("4  密钥文件（加密的图像段需要）"));
@@ -317,7 +371,10 @@ void MainWindow::buildUi() {
     rightLayout->setContentsMargins(0, 0, 0, 0);
     rightLayout->setSpacing(10);
 
-    auto* topRow = new QHBoxLayout;
+    auto* topRow = new QBoxLayout(QBoxLayout::LeftToRight);
+#ifdef Q_OS_ANDROID
+    topRow->setDirection(QBoxLayout::TopToBottom);
+#endif
     topRow->setSpacing(10);
     auto* constBox = new QGroupBox(QStringLiteral("星座图"));
     auto* constLayout = new QVBoxLayout(constBox);
@@ -378,8 +435,21 @@ void MainWindow::buildUi() {
     logLayout->addWidget(log_);
     rightLayout->addWidget(logBox);
 
+#ifdef Q_OS_ANDROID
+    auto* leftScroll = new QScrollArea;
+    leftScroll->setWidgetResizable(true);
+    leftScroll->setWidget(left);
+    auto* rightScroll = new QScrollArea;
+    rightScroll->setWidgetResizable(true);
+    rightScroll->setWidget(right);
+    auto* tabs = new QTabWidget;
+    tabs->addTab(leftScroll, QStringLiteral("解码"));
+    tabs->addTab(rightScroll, QStringLiteral("状态"));
+    root->addWidget(tabs);
+#else
     root->addWidget(left);
     root->addWidget(right, 1);
+#endif
     setCentralWidget(central);
 
     // ---- bottom strip: credit and agreement -------------------------------------------------------------
@@ -422,7 +492,12 @@ void MainWindow::buildUi() {
 QString MainWindow::outputRoot() const {
     const QString typed = outputEdit_ ? outputEdit_->text().trimmed() : QString();
     if (!typed.isEmpty()) return typed;
+#ifdef Q_OS_ANDROID
+    const QString base = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    return QDir(base.isEmpty() ? QDir::homePath() : base).filePath(QStringLiteral("output"));
+#else
     return QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).filePath(QStringLiteral("NadirStation_GK2A-HRIT"));
+#endif
 }
 
 void MainWindow::onSourceChanged(int index) {
@@ -505,8 +580,16 @@ void MainWindow::browseInput() {
     const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("选择基带录音"), start,
                                                       QStringLiteral("基带录音 (*.cs8 *.cs16 *.cs32 *.cf32 *.cu8 *.s8 *.s16 *.s32 *.f32 *.u8 *.wav *.w16 *.ziq *.ziq2);;所有文件 (*)"));
     if (path.isEmpty()) return;
-    settings.setValue(QStringLiteral("inputDir"), QFileInfo(path).absolutePath());
-    setInputPath(path);
+    const QString local = materializeInputFile(path);
+    if (local.isEmpty()) {
+        QMessageBox::warning(this, QStringLiteral("无法读取文件"),
+                             QStringLiteral("无法读取所选文件（Android 文件选择器返回的 URI 无法复制）。"));
+        return;
+    }
+#ifndef Q_OS_ANDROID
+    settings.setValue(QStringLiteral("inputDir"), QFileInfo(local).absolutePath());
+#endif
+    setInputPath(local);
 }
 
 void MainWindow::browseOutput() {
@@ -518,7 +601,15 @@ void MainWindow::browseKey() {
     const QString start = keyEdit_->text().isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) : keyEdit_->text();
     const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("选择密钥文件"), start,
                                                       QStringLiteral("密钥文件 (*.bin);;所有文件 (*)"));
-    if (!path.isEmpty()) keyEdit_->setText(QDir::toNativeSeparators(path));
+    if (!path.isEmpty()) {
+        const QString local = materializeInputFile(path);
+        if (local.isEmpty()) {
+            QMessageBox::warning(this, QStringLiteral("无法读取文件"),
+                                 QStringLiteral("无法读取所选密钥文件（Android 文件选择器返回的 URI 无法复制）。"));
+            return;
+        }
+        keyEdit_->setText(QDir::toNativeSeparators(local));
+    }
 }
 
 void MainWindow::openOutputFolder() {
@@ -528,12 +619,17 @@ void MainWindow::openOutputFolder() {
 }
 
 void MainWindow::setInputPath(const QString& path) {
+    const QString local = materializeInputFile(path);
+    if (local.isEmpty()) {
+        inputInfo_->setText(QStringLiteral("无法读取所选文件（Android 文件选择器返回的 URI 无法复制）。"));
+        return;
+    }
     if (sourceCombo_->currentIndex() != 0) {
         QSignalBlocker block(sourceCombo_);
         sourceCombo_->setCurrentIndex(0);
         onSourceChanged(0);
     }
-    inputEdit_->setText(QDir::toNativeSeparators(path));
+    inputEdit_->setText(QDir::toNativeSeparators(local));
     inspectInput();
 }
 
@@ -787,10 +883,25 @@ void MainWindow::dropEvent(QDropEvent* event) {
 
 // The agreement is accepted in the installer; this just opens the same text (EULA.txt, installed next to the program).
 void MainWindow::showAgreement() {
+#ifdef Q_OS_ANDROID
+    QDialog dialog(this);
+    dialog.setWindowTitle(QStringLiteral("用户协议与免责声明"));
+    dialog.resize(360, 560);
+    auto* layout = new QVBoxLayout(&dialog);
+    auto* browser = new QTextBrowser(&dialog);
+    browser->setSource(QUrl(QStringLiteral("qrc:/eula.html")));
+    layout->addWidget(browser);
+    auto* close = new QPushButton(QStringLiteral("关闭"), &dialog);
+    connect(close, &QPushButton::clicked, &dialog, &QDialog::accept);
+    layout->addWidget(close);
+    dialog.exec();
+    return;
+#else
     const QString path = QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("EULA.txt"));
     if (QFileInfo::exists(path) && QDesktopServices::openUrl(QUrl::fromLocalFile(path))) return;
     QMessageBox::information(this, QStringLiteral("用户协议与免责声明"),
                              QStringLiteral("找不到 EULA.txt。请重新安装本软件，或在官网阅读完整协议。"));
+#endif
 }
 
 void MainWindow::showAbout() {

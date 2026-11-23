@@ -1,0 +1,116 @@
+name: Android build
+
+on:
+  push:
+    branches: [main, master, 'feature/**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: android-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    name: Android arm64 APK
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+
+    env:
+      QT_VERSION: '6.8.3'
+      ANDROID_API: '34'
+      ANDROID_BUILD_TOOLS: '34.0.0'
+      ANDROID_NDK_VERSION: '26.1.10909125'
+      GRADLE_OPTS: '-Dorg.gradle.jvmargs=-Xmx3g -Dorg.gradle.daemon=false'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform, build-tools and NDK
+        shell: bash
+        run: |
+          if [ -z "${ANDROID_SDK_ROOT:-}" ]; then export ANDROID_SDK_ROOT="${ANDROID_HOME}"; fi
+          yes | sdkmanager --licenses > /dev/null
+          sdkmanager --install \
+            "platforms;android-${ANDROID_API}" \
+            "build-tools;${ANDROID_BUILD_TOOLS}" \
+            "ndk;${ANDROID_NDK_VERSION}" \
+            "cmake;3.22.1"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
+
+      - name: Install Qt for Android and host tools
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: linux
+          target: android
+          arch: android_arm64_v8a
+          cache: true
+
+      - name: Show Qt/toolchain layout
+        shell: bash
+        run: |
+          echo "QT_ROOT_DIR=$QT_ROOT_DIR"
+          echo "QT_HOST_PATH=$QT_HOST_PATH"
+          ls "$QT_ROOT_DIR/bin" | head -30
+          test -f "$QT_ROOT_DIR/bin/qt-cmake"
+
+      - name: Cache third-party sources
+        uses: actions/cache@v4
+        with:
+          path: third_party
+          key: android-third-party-${{ runner.os }}-${{ hashFiles('scripts/fetch_third_party.ps1') }}
+
+      - name: Fetch third-party sources
+        shell: pwsh
+        run: ./scripts/fetch_third_party.ps1
+
+      - name: Configure
+        shell: bash
+        run: |
+          bash "$QT_ROOT_DIR/bin/qt-cmake" -S . -B build-android -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-${ANDROID_API} \
+            -DQT_HOST_PATH="$QT_HOST_PATH" \
+            -DHRIT_BUILD_GUI=ON \
+            -DHRIT_BUILD_CLI=OFF \
+            -DHRIT_BUILD_TESTS=OFF \
+            -DHRIT_WITH_ZSTD=ON \
+            -DHRIT_THIRD_PARTY_DIR="$PWD/third_party"
+
+      - name: Build native libraries and APK
+        shell: bash
+        run: |
+          cmake --build build-android --parallel
+          cmake --build build-android --target apk
+
+      - name: Locate APK
+        shell: bash
+        run: |
+          find build-android -name '*.apk' -type f -print
+          APK=$(find build-android -name '*.apk' -type f | head -n 1)
+          if [ -z "$APK" ]; then echo "No APK produced" >&2; exit 1; fi
+          cp "$APK" "NadirStation_GK2A-HRIT_decoder_${GITHUB_RUN_NUMBER}_arm64.apk"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NadirStation-GK2A-HRIT-decoder-android-arm64
+          path: NadirStation_GK2A-HRIT_decoder_*_arm64.apk
+          if-no-files-found: error
