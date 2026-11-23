@@ -1,9 +1,11 @@
 // Command-line check of the receive chain without the window:
 //   hrit_cli <recording> [sampleRateHz] [--no-repair] [--dump=cadus.bin]
-//   hrit_cli --formats
+//   hrit_cli --formats | --sdr
+//   hrit_cli --live hackrf|rtl [seconds]
 #include "iqreader.h"
 #include "pipeline.h"
 #include "repair.h"
+#include "sdrsource.h"
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -32,11 +34,73 @@ int main(int argc, char** argv) {
     if (argc < 2) {
         std::fprintf(stderr,
                      "usage: %s <recording> [sampleRateHz] [--no-repair] [--dump=cadus.bin]\n"
-                     "       %s --formats\n",
-                     argv[0], argv[0]);
+                     "       %s --formats | --sdr\n"
+                     "       %s --live hackrf|rtl [seconds]\n",
+                     argv[0], argv[0], argv[0]);
         return 2;
     }
     if (!std::strcmp(argv[1], "--formats")) { printFormats(); return 0; }
+    if (!std::strcmp(argv[1], "--sdr")) {
+        for (hritapp::SdrKind kind : {hritapp::SdrKind::HackRf, hritapp::SdrKind::RtlSdr}) {
+            std::string error;
+            const auto devices = hritapp::SdrSource::enumerate(kind, error);
+            std::printf("%s: %zu device(s)%s%s\n", hritapp::sdrKindName(kind), devices.size(),
+                        error.empty() ? "" : " - ", error.c_str());
+            for (const auto& device : devices)
+                std::printf("  [%d] %s\n", device.index, device.name.c_str());
+        }
+        return 0;
+    }
+    if (!std::strcmp(argv[1], "--live")) {
+        if (argc < 3 || (std::strcmp(argv[2], "hackrf") && std::strcmp(argv[2], "rtl"))) {
+            std::fprintf(stderr, "usage: %s --live <hackrf|rtl> [seconds]\n", argv[0]);
+            return 2;
+        }
+        const double seconds = argc > 3 ? std::atof(argv[3]) : 10.0;
+        hritapp::SdrConfig config;
+        config.kind = std::strcmp(argv[2], "hackrf") ? hritapp::SdrKind::RtlSdr : hritapp::SdrKind::HackRf;
+        config.sampleRate = hritapp::sdrDefaultSampleRate(config.kind);
+        config.centerFrequency = 1695.4e6;
+        config.autoGain = config.kind == hritapp::SdrKind::RtlSdr;
+        std::string error;
+        const auto devices = hritapp::SdrSource::enumerate(config.kind, error);
+        if (!devices.empty()) {
+            config.deviceIndex = devices.front().index;
+            config.serial = devices.front().serial;
+        }
+        hritapp::SdrSource source;
+        if (!source.open(config, error)) {
+            std::fprintf(stderr, "open: %s\n", error.c_str());
+            return 1;
+        }
+        hritapp::HritPipeline pipe;
+        if (!pipe.configure(source.sampleRate(), error)) {
+            source.close();
+            std::fprintf(stderr, "configure: %s\n", error.c_str());
+            return 1;
+        }
+        const double rate = source.sampleRate();
+        std::vector<std::complex<float>> block;
+        const auto t0 = std::chrono::steady_clock::now();
+        std::uint64_t got = 0;
+        while (std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count() < seconds) {
+            error.clear();
+            const std::size_t n = source.read(block, 65536, 200, error);
+            if (!error.empty()) {
+                std::fprintf(stderr, "read: %s\n", error.c_str());
+                break;
+            }
+            got += n;
+            if (n > 0) pipe.process(block, [](nadirstation::gk2a::LritFile&&) {});
+        }
+        pipe.finish([](nadirstation::gk2a::LritFile&&) {});
+        source.close();
+        const auto s = pipe.stats();
+        std::printf("live %s: %.0f Hz, %.1f Msamples, %.2f Msamples dropped | RS ok %zu / sync %zu | packets %zu | lock %.2f | SNR %.1f dB\n",
+                    hritapp::sdrKindName(config.kind), rate, got / 1e6, source.samplesDropped() / 1e6,
+                    s.cadusRsOk, s.cadusWithSync, s.packets, s.lockQuality, s.snrDb);
+        return 0;
+    }
     bool repair = true;
     const char* dumpPath = nullptr;
     double rate = 0.0;

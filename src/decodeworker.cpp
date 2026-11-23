@@ -1,47 +1,19 @@
 #include "decodeworker.h"
 
+#include "decodehelpers.h"
 #include "gk2ahritimages.h"
 #include "iqreader.h"
 #include "qtpath.h"
 #include "repair.h"
 
-#include <QCoreApplication>
 #include <QDir>
-#include <QFileInfo>
 #include <QThread>
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <functional>
 #include <map>
-#include <regex>
 #include <string>
-
-namespace {
-
-// The decryption key is not part of this program: it is issued to registered users by the satellite operator.
-// Look for the file the user chose, then next to the program, then next to the recording.
-QString findKeyFile(const QString& chosen, const QString& inputPath, const QString& outputDir) {
-    QStringList candidates;
-    if (!chosen.isEmpty()) candidates << chosen;
-    const QDir app(QCoreApplication::applicationDirPath());
-    candidates << app.filePath(QStringLiteral("EncryptionKeyMessage.bin"))
-               << app.filePath(QStringLiteral("resources/gk2a/EncryptionKeyMessage.bin"))
-               << QFileInfo(inputPath).dir().filePath(QStringLiteral("EncryptionKeyMessage.bin"))
-               << QDir(outputDir).filePath(QStringLiteral("EncryptionKeyMessage.bin"));
-    for (const QString& c : candidates)
-        if (QFileInfo(c).isFile()) return QDir::toNativeSeparators(QFileInfo(c).absoluteFilePath());
-    return {};
-}
-
-// "IMG_FD_143_SW038_20261103_062903_05.hrit" -> "20261103_062903": which observation a segment belongs to.
-std::string observationStamp(const std::string& fileName) {
-    static const std::regex re("_(\\d{8}_\\d{6})_");
-    std::smatch m;
-    return std::regex_search(fileName, m, re) ? m[1].str() : std::string();
-}
-
-}  // namespace
 
 void DecodeWorker::run(const QString& inputPath, double manualRateHz, bool preferManual, const QString& outputDir,
                        const QString& keyPath, bool dcBlock) {
@@ -76,7 +48,7 @@ void DecodeWorker::run(const QString& inputPath, double manualRateHz, bool prefe
     }
 
     nadirstation::gk2a::HritImages images;
-    const QString key = findKeyFile(keyPath, inputPath, outputDir);
+    const QString key = hritapp::findKeyFile(keyPath, inputPath, outputDir);
     if (key.isEmpty())
         emit logLine(QStringLiteral("没有找到密钥文件 EncryptionKeyMessage.bin：加密的图像段无法解密。"
                                     "请在左侧“密钥文件”里选择你自己的密钥文件。"));
@@ -117,7 +89,7 @@ void DecodeWorker::run(const QString& inputPath, double manualRateHz, bool prefe
     const std::function<void(nadirstation::gk2a::LritFile&&)> onFile = [&](nadirstation::gk2a::LritFile&& file) {
         if (file.bytes.size() > nadirstation::gk2a::LritFileAssembler::kMaxFileBytes) return;
         if (!file.holes.empty() || file.lostPackets > 0) damaged[file.fileName] = std::max<std::size_t>(file.lostPackets, 1);
-        lastStamp = observationStamp(file.fileName);
+        lastStamp = hritapp::observationStamp(file.fileName);
         for (int tries = 0; tries < 400 && !stop_.load(); ++tries) {
             if (images.queuedBytes() > (24u << 20)) {
                 QThread::msleep(25);
@@ -175,7 +147,7 @@ void DecodeWorker::run(const QString& inputPath, double manualRateHz, bool prefe
                 const auto it = damaged.find(f.fileName);
                 if (it == damaged.end()) return;                                  // it was fine the first time
                 if (f.lostPackets >= it->second && !f.holes.empty()) return;      // nothing gained
-                if (observationStamp(f.fileName) != lastStamp) { ++skipped; return; }   // an earlier observation is already closed
+                if (hritapp::observationStamp(f.fileName) != lastStamp) { ++skipped; return; }   // an earlier observation is already closed
                 onFile(std::move(f));
                 ++rebuilt;
             });

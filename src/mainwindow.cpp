@@ -3,11 +3,13 @@
 #include "appinfo.h"
 #include "constellationwidget.h"
 #include "iqreader.h"
+#include "liveworker.h"
 #include "qtpath.h"
 
 #include <QApplication>
 #include <QCheckBox>
 #include <QCloseEvent>
+#include <QComboBox>
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDesktopServices>
@@ -35,12 +37,14 @@
 #include <QResizeEvent>
 #include <QSettings>
 #include <QSignalBlocker>
+#include <QSpinBox>
 #include <QStandardPaths>
 #include <QStatusBar>
 #include <QTextBrowser>
 #include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <algorithm>
 
 namespace {
 
@@ -84,6 +88,20 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     connect(worker_, &DecodeWorker::livePreview, this, &MainWindow::onLivePreview);
     connect(worker_, &DecodeWorker::observationDone, this, &MainWindow::onObservationDone);
     connect(worker_, &DecodeWorker::finished, this, &MainWindow::onFinished);
+
+    liveWorker_ = new LiveDecodeWorker;
+    liveWorker_->moveToThread(&thread_);
+    connect(this, &MainWindow::startLiveRequested, liveWorker_, &LiveDecodeWorker::run);
+    connect(liveWorker_, &LiveDecodeWorker::inputInfo, this,
+            [this](const QString& text, double) { inputInfo_->setText(text); });
+    connect(liveWorker_, &LiveDecodeWorker::logLine, this, &MainWindow::onLog);
+    connect(liveWorker_, &LiveDecodeWorker::progress, this, &MainWindow::onProgress);
+    connect(liveWorker_, &LiveDecodeWorker::statsChanged, this, &MainWindow::onStats);
+    connect(liveWorker_, &LiveDecodeWorker::constellation, this,
+            [this](const std::vector<std::complex<float>>& points) { constellation_->setPoints(points); });
+    connect(liveWorker_, &LiveDecodeWorker::livePreview, this, &MainWindow::onLivePreview);
+    connect(liveWorker_, &LiveDecodeWorker::observationDone, this, &MainWindow::onObservationDone);
+    connect(liveWorker_, &LiveDecodeWorker::finished, this, &MainWindow::onFinished);
     thread_.start();
 
     QSettings settings;
@@ -91,14 +109,32 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     keyEdit_->setText(settings.value(QStringLiteral("keyFile")).toString());
     rateSpin_->setValue(settings.value(QStringLiteral("manualRateMsps"), 6.0).toDouble());
     dcBlock_->setChecked(settings.value(QStringLiteral("dcBlock"), true).toBool());
-    statusBar()->showMessage(QStringLiteral("就绪：把基带录音（cs8、cs16、cs32、cf32、cu8、wav、ziq、ziq2）拖进窗口，或点“浏览”选择。"));
+
+    const int source = std::clamp(settings.value(QStringLiteral("source"), 0).toInt(), 0, 2);
+    {
+        QSignalBlocker block(sourceCombo_);
+        sourceCombo_->setCurrentIndex(source);
+    }
+    onSourceChanged(source);
+    liveFreq_->setValue(settings.value(QStringLiteral("liveFreqMHz"), 1695.4).toDouble());
+    liveRate_->setValue(settings.value(QStringLiteral("liveRateMsps"), liveRate_->value()).toDouble());
+    liveGain_->setValue(settings.value(QStringLiteral("liveGainDb"), liveGain_->value()).toDouble());
+    liveLna_->setValue(settings.value(QStringLiteral("liveLnaDb"), liveLna_->value()).toInt());
+    liveVga_->setValue(settings.value(QStringLiteral("liveVgaDb"), liveVga_->value()).toInt());
+    livePpm_->setValue(settings.value(QStringLiteral("livePpm"), 0).toInt());
+    liveAmp_->setChecked(settings.value(QStringLiteral("liveAmp"), false).toBool());
+    autoGain_->setChecked(settings.value(QStringLiteral("liveAutoGain"), autoGain_->isChecked()).toBool());
+    biasTee_->setChecked(settings.value(QStringLiteral("liveBiasTee"), false).toBool());
+    statusBar()->showMessage(QStringLiteral("就绪：选择文件录音，或从 HackRF / RTL-SDR 实时接收。"));
 }
 
 MainWindow::~MainWindow() {
     if (worker_) worker_->requestStop();
+    if (liveWorker_) liveWorker_->requestStop();
     thread_.quit();
     thread_.wait();
-    delete worker_;   // its thread has finished, so deleting it from here is safe
+    delete worker_;       // its thread has finished, so deleting it from here is safe
+    delete liveWorker_;
 }
 
 void MainWindow::buildUi() {
@@ -116,14 +152,23 @@ void MainWindow::buildUi() {
 
     auto* title = new QLabel(QStringLiteral("GK-2A HRIT 解码器"));
     title->setObjectName(QStringLiteral("AppTitle"));
-    auto* subtitle = new QLabel(QStringLiteral("离线解码基带录音 → LRIT 文件 → 云图与 L2 产品"));
+    auto* subtitle = new QLabel(QStringLiteral("解码基带录音或 HackRF / RTL-SDR 实时流 → LRIT 文件 → 云图与 L2 产品"));
     subtitle->setObjectName(QStringLiteral("Muted"));
     subtitle->setWordWrap(true);
     leftLayout->addWidget(title);
     leftLayout->addWidget(subtitle);
 
-    auto* inputBox = new QGroupBox(QStringLiteral("1  录音文件"));
-    auto* inputLayout = new QVBoxLayout(inputBox);
+    auto* sourceBox = new QGroupBox(QStringLiteral("1  信号源"));
+    auto* sourceLayout = new QVBoxLayout(sourceBox);
+    sourceCombo_ = new QComboBox;
+    sourceCombo_->addItem(QStringLiteral("文件录音"));
+    sourceCombo_->addItem(QStringLiteral("HackRF（USB 实时）"));
+    sourceCombo_->addItem(QStringLiteral("RTL-SDR（USB 实时）"));
+    sourceLayout->addWidget(sourceCombo_);
+    leftLayout->addWidget(sourceBox);
+
+    fileBox_ = new QGroupBox(QStringLiteral("2  录音文件"));
+    auto* inputLayout = new QVBoxLayout(fileBox_);
     auto* inputRow = new QHBoxLayout;
     inputEdit_ = new QLineEdit;
     inputEdit_->setPlaceholderText(QStringLiteral("拖入 cs8 / cs16 / cs32 / cf32 / cu8 / wav / ziq / ziq2，或点右侧“浏览”"));
@@ -134,7 +179,6 @@ void MainWindow::buildUi() {
     inputInfo_ = new QLabel(QStringLiteral("尚未选择文件。"));
     inputInfo_->setObjectName(QStringLiteral("Muted"));
     inputInfo_->setWordWrap(true);
-    inputLayout->addWidget(inputInfo_);
     auto* rateRow = new QHBoxLayout;
     manualRate_ = new QCheckBox(QStringLiteral("手动指定采样率"));
     rateSpin_ = new QDoubleSpinBox;
@@ -150,14 +194,85 @@ void MainWindow::buildUi() {
     rateHint->setObjectName(QStringLiteral("Muted"));
     rateHint->setWordWrap(true);
     inputLayout->addWidget(rateHint);
+    leftLayout->addWidget(fileBox_);
+
+    liveBox_ = new QGroupBox(QStringLiteral("2  实时接收参数"));
+    auto* liveLayout = new QVBoxLayout(liveBox_);
+    auto* deviceRow = new QHBoxLayout;
+    deviceCombo_ = new QComboBox;
+    refreshDevicesBtn_ = new QPushButton(QStringLiteral("刷新"));
+    deviceRow->addWidget(new QLabel(QStringLiteral("设备")));
+    deviceRow->addWidget(deviceCombo_, 1);
+    deviceRow->addWidget(refreshDevicesBtn_);
+    liveLayout->addLayout(deviceRow);
+    const auto makeRow = [](const QString& text, QWidget* widget) {
+        auto* row = new QWidget;
+        auto* h = new QHBoxLayout(row);
+        h->setContentsMargins(0, 0, 0, 0);
+        h->addWidget(new QLabel(text));
+        h->addWidget(widget, 1);
+        return row;
+    };
+    liveFreq_ = new QDoubleSpinBox;
+    liveFreq_->setDecimals(4);
+    liveFreq_->setRange(1.0, 6000.0);
+    liveFreq_->setValue(1695.4);
+    liveFreq_->setSuffix(QStringLiteral(" MHz"));
+    liveLayout->addWidget(makeRow(QStringLiteral("中心频率"), liveFreq_));
+    liveRate_ = new QDoubleSpinBox;
+    liveRate_->setDecimals(3);
+    liveRate_->setRange(1.0, 20.0);
+    liveRate_->setValue(6.0);
+    liveRate_->setSuffix(QStringLiteral(" MS/s"));
+    liveLayout->addWidget(makeRow(QStringLiteral("采样率"), liveRate_));
+    liveGain_ = new QDoubleSpinBox;
+    liveGain_->setDecimals(1);
+    liveGain_->setRange(0.0, 50.0);
+    liveGain_->setValue(40.0);
+    liveGain_->setSuffix(QStringLiteral(" dB"));
+    rtlGainRow_ = makeRow(QStringLiteral("调谐增益"), liveGain_);
+    liveLayout->addWidget(rtlGainRow_);
+    liveLna_ = new QSpinBox;
+    liveLna_->setRange(0, 40);
+    liveLna_->setSingleStep(8);
+    liveLna_->setValue(32);
+    liveLna_->setSuffix(QStringLiteral(" dB"));
+    hackLnaRow_ = makeRow(QStringLiteral("LNA"), liveLna_);
+    liveLayout->addWidget(hackLnaRow_);
+    liveVga_ = new QSpinBox;
+    liveVga_->setRange(0, 62);
+    liveVga_->setSingleStep(2);
+    liveVga_->setValue(40);
+    liveVga_->setSuffix(QStringLiteral(" dB"));
+    hackVgaRow_ = makeRow(QStringLiteral("VGA"), liveVga_);
+    liveLayout->addWidget(hackVgaRow_);
+    auto* liveFlags = new QHBoxLayout;
+    autoGain_ = new QCheckBox(QStringLiteral("自动增益"));
+    liveAmp_ = new QCheckBox(QStringLiteral("RF 放大 +14 dB"));
+    biasTee_ = new QCheckBox(QStringLiteral("Bias-Tee"));
+    liveFlags->addWidget(autoGain_);
+    liveFlags->addWidget(liveAmp_);
+    liveFlags->addWidget(biasTee_);
+    liveLayout->addLayout(liveFlags);
+    livePpm_ = new QSpinBox;
+    livePpm_->setRange(-100, 100);
+    livePpm_->setSuffix(QStringLiteral(" ppm"));
+    ppmRow_ = makeRow(QStringLiteral("频率校正"), livePpm_);
+    liveLayout->addWidget(ppmRow_);
+    liveHint_ = new QLabel(QStringLiteral("HackRF 建议 6 MS/s；RTL-SDR 最高 3.2 MS/s。库文件（hackrf.dll / rtlsdr.dll）需放在程序目录或 PATH。"));
+    liveHint_->setObjectName(QStringLiteral("Muted"));
+    liveHint_->setWordWrap(true);
+    liveLayout->addWidget(liveHint_);
+    leftLayout->addWidget(liveBox_);
+    leftLayout->addWidget(inputInfo_);
+
     dcBlock_ = new QCheckBox(QStringLiteral("去除直流偏置（推荐）"));
     dcBlock_->setChecked(true);
     dcBlock_->setToolTip(QStringLiteral("在解调前用 500 Hz 高通去掉 I/Q 的直流偏置：SDR 的中心尖峰、本振泄漏和 ADC 偏置都会让 AGC 和载波环偏离。\n"
                                         "HRIT 信号从直流一直铺到约 2.25 MHz，500 Hz 的拐点对信号几乎没有影响。只有确认录音本身没有直流问题时才需要关掉。"));
-    inputLayout->addWidget(dcBlock_);
-    leftLayout->addWidget(inputBox);
+    leftLayout->addWidget(dcBlock_);
 
-    auto* outBox = new QGroupBox(QStringLiteral("2  输出文件夹"));
+    auto* outBox = new QGroupBox(QStringLiteral("3  输出文件夹"));
     auto* outLayout = new QVBoxLayout(outBox);
     auto* outRow = new QHBoxLayout;
     outputEdit_ = new QLineEdit;
@@ -169,7 +284,7 @@ void MainWindow::buildUi() {
     outLayout->addWidget(openOutBtn_);
     leftLayout->addWidget(outBox);
 
-    auto* keyBox = new QGroupBox(QStringLiteral("3  密钥文件（加密的图像段需要）"));
+    auto* keyBox = new QGroupBox(QStringLiteral("4  密钥文件（加密的图像段需要）"));
     auto* keyLayout = new QVBoxLayout(keyBox);
     auto* keyRow = new QHBoxLayout;
     keyEdit_ = new QLineEdit;
@@ -284,6 +399,8 @@ void MainWindow::buildUi() {
     statusBar()->setSizeGripEnabled(false);
 
     connect(browseIn, &QPushButton::clicked, this, &MainWindow::browseInput);
+    connect(sourceCombo_, &QComboBox::currentIndexChanged, this, &MainWindow::onSourceChanged);
+    connect(refreshDevicesBtn_, &QPushButton::clicked, this, &MainWindow::refreshDevices);
     connect(browseOut, &QPushButton::clicked, this, &MainWindow::browseOutput);
     connect(browseKey, &QPushButton::clicked, this, &MainWindow::browseKey);
     connect(openOutBtn_, &QPushButton::clicked, this, &MainWindow::openOutputFolder);
@@ -306,6 +423,78 @@ QString MainWindow::outputRoot() const {
     const QString typed = outputEdit_ ? outputEdit_->text().trimmed() : QString();
     if (!typed.isEmpty()) return typed;
     return QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).filePath(QStringLiteral("NadirStation_GK2A-HRIT"));
+}
+
+void MainWindow::onSourceChanged(int index) {
+    liveMode_ = index > 0;
+    fileBox_->setVisible(!liveMode_);
+    liveBox_->setVisible(liveMode_);
+    if (!liveMode_) {
+        inspectInput();
+        return;
+    }
+    const hritapp::SdrKind kind = index == 1 ? hritapp::SdrKind::HackRf : hritapp::SdrKind::RtlSdr;
+    liveRate_->setMaximum(hritapp::sdrMaxSampleRate(kind) / 1e6);
+    liveRate_->setSingleStep(kind == hritapp::SdrKind::HackRf ? 1.0 : 0.1);
+    liveRate_->setValue(hritapp::sdrDefaultSampleRate(kind) / 1e6);
+    liveLna_->setValue(32);
+    liveVga_->setValue(40);
+    liveGain_->setValue(40.0);
+    autoGain_->setChecked(kind == hritapp::SdrKind::RtlSdr);
+    rtlGainRow_->setVisible(kind == hritapp::SdrKind::RtlSdr);
+    hackLnaRow_->setVisible(kind == hritapp::SdrKind::HackRf);
+    hackVgaRow_->setVisible(kind == hritapp::SdrKind::HackRf);
+    ppmRow_->setVisible(kind == hritapp::SdrKind::RtlSdr);
+    autoGain_->setVisible(kind == hritapp::SdrKind::RtlSdr);
+    liveAmp_->setVisible(kind == hritapp::SdrKind::HackRf);
+    biasTee_->setVisible(true);
+    if (kind == hritapp::SdrKind::HackRf)
+        liveHint_->setText(QStringLiteral("HackRF：建议 6 MS/s；1.7 GHz 接收建议外加 LNA / 滤波器。"
+                                          "库文件 hackrf.dll 与驱动需放在程序目录或 PATH。"));
+    else
+        liveHint_->setText(QStringLiteral("RTL-SDR：最高 3.2 MS/s，1.7 GHz 灵敏度较低，建议外加 LNA / 滤波器。"
+                                          "库文件 rtlsdr.dll 与 libusb-1.0.dll 需放在程序目录或 PATH。"));
+    refreshDevices();
+}
+
+void MainWindow::refreshDevices() {
+    if (!liveMode_) return;
+    const hritapp::SdrKind kind =
+        sourceCombo_->currentIndex() == 1 ? hritapp::SdrKind::HackRf : hritapp::SdrKind::RtlSdr;
+    deviceCombo_->clear();
+    std::string error;
+    const auto devices = hritapp::SdrSource::enumerate(kind, error);
+    for (const auto& device : devices) {
+        const int row = deviceCombo_->count();
+        deviceCombo_->addItem(QString::fromStdString(device.name), device.index);
+        deviceCombo_->setItemData(row, QString::fromStdString(device.serial), Qt::UserRole + 1);
+    }
+    if (devices.empty()) {
+        deviceCombo_->addItem(QStringLiteral("未找到设备"));
+        if (!error.empty())
+            liveHint_->setText(liveHint_->text().section(QLatin1Char('\n'), 0, 0) + QStringLiteral("\n") +
+                               QString::fromUtf8(error.c_str()));
+    } else {
+        liveHint_->setText(liveHint_->text().section(QLatin1Char('\n'), 0, 0) +
+                           QStringLiteral("\n找到 %1 个设备。").arg(devices.size()));
+    }
+}
+
+hritapp::SdrConfig MainWindow::liveConfig() const {
+    hritapp::SdrConfig config;
+    config.kind = sourceCombo_->currentIndex() == 1 ? hritapp::SdrKind::HackRf : hritapp::SdrKind::RtlSdr;
+    config.deviceIndex = deviceCombo_->currentData().toInt();
+    config.serial = deviceCombo_->currentData(Qt::UserRole + 1).toString().toStdString();
+    config.sampleRate = liveRate_->value() * 1e6;
+    config.centerFrequency = liveFreq_->value() * 1e6;
+    config.gainDb = liveGain_->value();
+    config.lnaGainDb = liveLna_->value();
+    config.vgaGainDb = liveVga_->value();
+    config.amplifier = liveAmp_->isChecked();
+    config.autoGain = autoGain_->isChecked();
+    config.biasTee = biasTee_->isChecked();
+    config.ppm = livePpm_->value();
+    return config;
 }
 
 void MainWindow::browseInput() {
@@ -337,6 +526,11 @@ void MainWindow::openOutputFolder() {
 }
 
 void MainWindow::setInputPath(const QString& path) {
+    if (sourceCombo_->currentIndex() != 0) {
+        QSignalBlocker block(sourceCombo_);
+        sourceCombo_->setCurrentIndex(0);
+        onSourceChanged(0);
+    }
     inputEdit_->setText(QDir::toNativeSeparators(path));
     inspectInput();
 }
@@ -401,12 +595,58 @@ void MainWindow::toggleRun() {
         if (!stopping_) {
             stopping_ = true;
             worker_->requestStop();
+            liveWorker_->requestStop();
             startBtn_->setEnabled(false);
             startBtn_->setText(QStringLiteral("正在停止…"));
             onLog(QStringLiteral("已请求停止，正在保存已收到的内容…"));
         }
         return;
     }
+    if (liveMode_) {
+        if (deviceCombo_->currentIndex() < 0 || deviceCombo_->currentText().startsWith(QStringLiteral("未找到"))) {
+            QMessageBox::information(this, QStringLiteral("没有找到 SDR"),
+                                     QStringLiteral("没有找到可用的 SDR 设备。请检查 USB 连接、驱动，以及程序目录或 PATH 中的运行库。"));
+            return;
+        }
+        const double rate = liveRate_->value() * 1e6;
+        if (!hritapp::sdrSampleRateOk(rate)) {
+            QMessageBox::warning(this, QStringLiteral("采样率太低"),
+                                 QStringLiteral("GK-2A HRIT 至少需要 3.15 MS/s；当前是 %1 MS/s。")
+                                     .arg(liveRate_->value(), 0, 'f', 3));
+            return;
+        }
+        const hritapp::SdrConfig config = liveConfig();
+        const QString out = outputRoot();
+        outputEdit_->setText(QDir::toNativeSeparators(out));
+        QSettings settings;
+        settings.setValue(QStringLiteral("outputDir"), outputEdit_->text());
+        settings.setValue(QStringLiteral("keyFile"), keyEdit_->text());
+        settings.setValue(QStringLiteral("source"), sourceCombo_->currentIndex());
+        settings.setValue(QStringLiteral("dcBlock"), dcBlock_->isChecked());
+        settings.setValue(QStringLiteral("liveFreqMHz"), liveFreq_->value());
+        settings.setValue(QStringLiteral("liveRateMsps"), liveRate_->value());
+        settings.setValue(QStringLiteral("liveGainDb"), liveGain_->value());
+        settings.setValue(QStringLiteral("liveLnaDb"), liveLna_->value());
+        settings.setValue(QStringLiteral("liveVgaDb"), liveVga_->value());
+        settings.setValue(QStringLiteral("livePpm"), livePpm_->value());
+        settings.setValue(QStringLiteral("liveAmp"), liveAmp_->isChecked());
+        settings.setValue(QStringLiteral("liveAutoGain"), autoGain_->isChecked());
+        settings.setValue(QStringLiteral("liveBiasTee"), biasTee_->isChecked());
+
+        log_->clear();
+        products_->clear();
+        previewLabel_->setPixmap(QPixmap());
+        previewLabel_->setText(QStringLiteral("等待图像数据…"));
+        previewCaption_->clear();
+        lastPreview_ = QImage();
+        progress_->setRange(0, 0);
+        progress_->setValue(0);
+        onStats(hritapp::PipelineStats{});
+        setRunning(true);
+        emit startLiveRequested(config, out, keyEdit_->text().trimmed(), dcBlock_->isChecked());
+        return;
+    }
+
     const QString path = inputEdit_->text().trimmed();
     if (path.isEmpty() || !QFileInfo(path).isFile() || !isSupportedRecording(path)) {
         QMessageBox::information(this, QStringLiteral("还没有选好录音"),
@@ -425,6 +665,7 @@ void MainWindow::toggleRun() {
     settings.setValue(QStringLiteral("keyFile"), keyEdit_->text());
     settings.setValue(QStringLiteral("manualRateMsps"), rateSpin_->value());
     settings.setValue(QStringLiteral("dcBlock"), dcBlock_->isChecked());
+    settings.setValue(QStringLiteral("source"), sourceCombo_->currentIndex());
 
     log_->clear();
     products_->clear();
@@ -432,6 +673,7 @@ void MainWindow::toggleRun() {
     previewLabel_->setText(QStringLiteral("等待图像数据…"));
     previewCaption_->clear();
     lastPreview_ = QImage();
+    progress_->setRange(0, 1000);
     progress_->setValue(0);
     onStats(hritapp::PipelineStats{});
     setRunning(true);
@@ -443,14 +685,18 @@ void MainWindow::setRunning(bool running) {
     running_ = running;
     stopping_ = false;
     startBtn_->setEnabled(true);
-    startBtn_->setText(running ? QStringLiteral("停止") : QStringLiteral("开始解码"));
-    inputEdit_->setEnabled(!running);
+    startBtn_->setText(running ? QStringLiteral("停止")
+                               : (liveMode_ ? QStringLiteral("开始接收") : QStringLiteral("开始解码")));
+    sourceCombo_->setEnabled(!running);
+    fileBox_->setEnabled(!running);
+    liveBox_->setEnabled(!running);
     outputEdit_->setEnabled(!running);
     keyEdit_->setEnabled(!running);
     manualRate_->setEnabled(!running);
     dcBlock_->setEnabled(!running);
     rateSpin_->setEnabled(!running && manualRate_->isChecked());
-    statusBar()->showMessage(running ? QStringLiteral("解码中…") : QStringLiteral("就绪"));
+    statusBar()->showMessage(running ? (liveMode_ ? QStringLiteral("接收中…") : QStringLiteral("解码中…"))
+                                     : QStringLiteral("就绪"));
 }
 
 void MainWindow::onLog(const QString& text) {
@@ -458,6 +704,12 @@ void MainWindow::onLog(const QString& text) {
 }
 
 void MainWindow::onProgress(int permille) {
+    if (permille < 0) {
+        if (progress_->minimum() != 0 || progress_->maximum() != 0) progress_->setRange(0, 0);
+        statusBar()->showMessage(QStringLiteral("实时接收中…"));
+        return;
+    }
+    if (progress_->maximum() == 0) progress_->setRange(0, 1000);
     progress_->setValue(permille);
     statusBar()->showMessage(QStringLiteral("解码中… %1%").arg(permille / 10.0, 0, 'f', 1));
 }
@@ -507,10 +759,11 @@ void MainWindow::onObservationDone(const QString& stamp, const QStringList& path
 
 void MainWindow::onFinished(bool ok, const QString& summary) {
     setRunning(false);
+    if (progress_->maximum() == 0) progress_->setRange(0, 1000);
     progress_->setValue(ok ? progress_->value() : 0);
     onLog(summary);
     statusBar()->showMessage(summary.section(QLatin1Char('\n'), 0, 0));
-    if (!ok) QMessageBox::warning(this, QStringLiteral("解码没有开始"), summary);
+    if (!ok) QMessageBox::warning(this, QStringLiteral("接收没有完成"), summary);
 }
 
 void MainWindow::dragEnterEvent(QDragEnterEvent* event) {
@@ -542,7 +795,7 @@ void MainWindow::showAbout() {
     QMessageBox::about(this, QStringLiteral("关于"),
         QStringLiteral("<h3>%1</h3>"
                        "<p>版本 %2<br>开发者：%3</p>"
-                       "<p>离线解码 GK-2A（千里眼-2A）HRIT 下行的基带录音：QPSK 解调 → Viterbi / Reed-Solomon → LRIT 文件 → 云图与 L2 产品。支持更多基带格式：cs8 / cs16 / cs32 / cf32 / cu8 / wav / ziq / ziq2（按文件头自动识别），不控制任何无线电硬件，不联网。</p>"
+                       "<p>解码 GK-2A（千里眼-2A）HRIT 下行：可直接读取基带录音，也可从 HackRF / RTL-SDR 实时接收。QPSK 解调 → Viterbi / Reed-Solomon → LRIT 文件 → 云图与 L2 产品。支持 cs8 / cs16 / cs32 / cf32 / cu8 / wav / ziq / ziq2（按文件头自动识别）；只接收，不发射，不联网。</p>"
                        "<p>本软件是业余爱好者的学习研究项目，不是气象业务系统，也与韩国气象厅、国家气象卫星中心无任何隶属或授权关系。使用前请阅读“用户协议与免责声明”。</p>"
                        "<p style='color:#8a919c'>第三方：Qt 6（LGPL v3）、OpenJPEG（BSD-2）、libjpeg-turbo（BSD/IJG/zlib）、zstd（BSD-3，仅用于读取压缩 ZIQ）、Natural Earth（公有领域，国界为中国视角版本）。</p>")
             .arg(QString::fromUtf8(appinfo::kProductName), QString::fromUtf8(appinfo::kVersion), QString::fromUtf8(appinfo::kDeveloper)));
@@ -550,18 +803,29 @@ void MainWindow::showAbout() {
 
 void MainWindow::closeEvent(QCloseEvent* event) {
     if (running_) {
-        const auto answer = QMessageBox::question(this, QStringLiteral("正在解码"),
-                                                  QStringLiteral("解码还在进行。退出会先保存已收到的内容，可能需要几十秒。确定退出吗？"));
+        const auto answer = QMessageBox::question(this, QStringLiteral("正在接收"),
+                                                  QStringLiteral("接收还在进行。退出会先保存已收到的内容，可能需要几十秒。确定退出吗？"));
         if (answer != QMessageBox::Yes) {
             event->ignore();
             return;
         }
         worker_->requestStop();
+        liveWorker_->requestStop();
     }
     QSettings settings;
     settings.setValue(QStringLiteral("outputDir"), outputEdit_->text());
     settings.setValue(QStringLiteral("keyFile"), keyEdit_->text());
     settings.setValue(QStringLiteral("manualRateMsps"), rateSpin_->value());
     settings.setValue(QStringLiteral("dcBlock"), dcBlock_->isChecked());
+    settings.setValue(QStringLiteral("source"), sourceCombo_->currentIndex());
+    settings.setValue(QStringLiteral("liveFreqMHz"), liveFreq_->value());
+    settings.setValue(QStringLiteral("liveRateMsps"), liveRate_->value());
+    settings.setValue(QStringLiteral("liveGainDb"), liveGain_->value());
+    settings.setValue(QStringLiteral("liveLnaDb"), liveLna_->value());
+    settings.setValue(QStringLiteral("liveVgaDb"), liveVga_->value());
+    settings.setValue(QStringLiteral("livePpm"), livePpm_->value());
+    settings.setValue(QStringLiteral("liveAmp"), liveAmp_->isChecked());
+    settings.setValue(QStringLiteral("liveAutoGain"), autoGain_->isChecked());
+    settings.setValue(QStringLiteral("liveBiasTee"), biasTee_->isChecked());
     event->accept();
 }

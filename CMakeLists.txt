@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(NadirStation_GK2A_HRIT_Decoder VERSION 1.1.0 LANGUAGES C CXX)
+project(NadirStation_GK2A_HRIT_Decoder VERSION 1.2.0 LANGUAGES C CXX)
 
 # MinGW Makefiles are single-configuration generators: default to Release so the per-sample DSP is optimised.
 if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
@@ -104,12 +104,12 @@ endif()
 
 # ---- Qt-free receive chain: reader + demodulator + framing + LRIT file assembly ---------------------------------
 add_library(hrit_core STATIC
-    src/iqreader.cpp src/pipeline.cpp src/repair.cpp
+    src/iqreader.cpp src/sdrsource.cpp src/pipeline.cpp src/repair.cpp
     src/dsp.cpp src/gk2adecoder.cpp src/gk2adatalink.cpp src/gk2ahrit.cpp)
 target_include_directories(hrit_core PUBLIC src)
 target_compile_options(hrit_core PRIVATE ${HRIT_WARN})
 find_package(Threads REQUIRED)
-target_link_libraries(hrit_core PUBLIC Threads::Threads)
+target_link_libraries(hrit_core PUBLIC Threads::Threads ${CMAKE_DL_LIBS})
 if(HRIT_WITH_ZSTD)
     target_link_libraries(hrit_core PRIVATE ${HRIT_ZSTD_TARGET})
     target_compile_definitions(hrit_core PUBLIC HRIT_HAVE_ZSTD=1)
@@ -166,7 +166,8 @@ if(HRIT_BUILD_GUI)
     # ---- the application -----------------------------------------------------------------------------------------
     set(APP_SOURCES
         src/main.cpp src/mainwindow.cpp src/mainwindow.h
-        src/decodeworker.cpp src/decodeworker.h
+        src/decodeworker.cpp src/decodeworker.h src/decodehelpers.cpp src/decodehelpers.h
+        src/liveworker.cpp src/liveworker.h
         src/constellationwidget.cpp src/constellationwidget.h
         src/appinfo.h src/qtpath.h
         resources/app.qrc)
@@ -193,6 +194,7 @@ if(HRIT_BUILD_GUI)
         installer/EULA.txt
         installer/THIRD_PARTY_NOTICES.txt
         installer/LGPL_COMPLIANCE.txt
+        installer/SDR_README.txt
         DESTINATION .)
     install(DIRECTORY installer/LICENSES/ DESTINATION LICENSES)
 endif()
@@ -218,4 +220,9 @@ if(HRIT_BUILD_TESTS)
     target_link_libraries(test_dsp PRIVATE hrit_core)
     target_compile_options(test_dsp PRIVATE ${HRIT_WARN})
     add_test(NAME dsp COMMAND test_dsp)
+
+    add_executable(test_sdr tests/test_sdr.cpp)
+    target_link_libraries(test_sdr PRIVATE hrit_core)
+    target_compile_options(test_sdr PRIVATE ${HRIT_WARN})
+    add_test(NAME sdr COMMAND test_sdr)
 endif()

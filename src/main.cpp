@@ -1,4 +1,5 @@
 #include "appinfo.h"
+#include "liveworker.h"
 #include "mainwindow.h"
 
 #include <QApplication>
@@ -77,6 +78,7 @@ int main(int argc, char* argv[]) {
     qRegisterMetaType<std::vector<std::complex<float>>>("std::vector<std::complex<float> >");
     qRegisterMetaType<std::vector<std::complex<float>>>("std::vector<std::complex<float>>");
     qRegisterMetaType<hritapp::PipelineStats>("hritapp::PipelineStats");
+    qRegisterMetaType<hritapp::SdrConfig>("hritapp::SdrConfig");
     applyTheme(app);
     app.setWindowIcon(QIcon(QStringLiteral(":/icon.png")));
 
