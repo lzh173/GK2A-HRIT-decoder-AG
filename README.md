@@ -1,8 +1,9 @@
-# NadirStation GK-2A HRIT Decoder 1.1.0
+# NadirStation GK-2A HRIT Decoder 1.2.0
 
-Offline decoder for the GK-2A (GEO-KOMPSAT-2A) HRIT downlink. It reads a baseband IQ recording and
-demodulates the 3 Msym/s QPSK signal, corrects errors (Viterbi + Reed-Solomon), reassembles the
-LRIT/HRIT files and builds images and a few L2-style products from them.
+Offline decoder for the GK-2A (GEO-KOMPSAT-2A) HRIT downlink. It reads a baseband IQ recording or a
+live USB stream from a HackRF / RTL-SDR, demodulates the 3 Msym/s QPSK signal, corrects errors
+(Viterbi + Reed-Solomon), reassembles the LRIT/HRIT files and builds images and a few L2-style
+products from them.
 
 The baseband reader supports a wider set of recording formats:
 
@@ -21,13 +22,42 @@ The format is taken from the file header first (`ZIQ_`, `ZIQ2`, `RIFF`/`RF64`) a
 otherwise, so a renamed recording still opens. `.ziq`/`.ziq2` are the compressed and packetised
 baseband formats; a zstd-compressed ZIQ needs zstd, which the Windows build includes.
 
-It only reads files. It does not control any radio hardware, has no transmit function and makes no network connections.
+## Live reception (HackRF / RTL-SDR)
+
+The window can also decode a live USB stream. The SDR libraries are optional and loaded at run time:
+they are not build or link dependencies and are not shipped with this program. Put the library next to
+the executable (or on `PATH`), install the vendor driver, select the source in the window, and start.
+
+- **HackRF**: `hackrf.dll` and its dependencies (`libusb-1.0.dll`, `pthreadVC3.dll` on Windows).
+  4–6 MS/s works; 6 MS/s is the default. At 1695.4 MHz an external LNA/filter is strongly recommended:
+  the 8-bit ADC and clock are usable, but this is not a replacement for a good L-band front end.
+- **RTL-SDR**: `rtlsdr.dll` and `libusb-1.0.dll`. The RTL-SDR tops out at 3.2 MS/s, only just above the
+  3.15 MS/s the 3 Msym/s link needs, so expect dropped samples; 1.7 GHz sensitivity is also poor
+  without an external LNA/filter.
+
+Centre frequency is 1695.4 MHz. HackRF exposes LNA, VGA, RF amplifier and Bias-Tee; RTL-SDR exposes
+AGC or tuner gain, PPM correction and Bias-Tee. The program is receive-only and never transmits.
+The command line can list devices and run a short live check:
+
+```
+hrit_cli --sdr
+hrit_cli --live hackrf 10
+hrit_cli --live rtl 10
+```
+
+Live decoding uses a bounded ring between the USB callback and the decoder: if image decoding falls
+behind, the oldest samples are dropped and counted in the log rather than stalling the receiver.
+The file-only repair pass is not used for live input.
+
+It is receive-only: it reads files or USB receiver samples, has no transmit function and makes no network connections.
 
 Developer: AGcov (BI2QYN)
 
 ## What it does
 
 - QPSK demodulator for 3.15 MS/s and up (tested from 3.2 MS/s to 6 MS/s), with a band-limited receive filter for low sample rates.
+- Live input from HackRF and RTL-SDR alongside file input, with device selection, centre frequency,
+  sample rate, gain/PPM/Bias-Tee controls and a bounded sample ring.
 - DC blocker (500 Hz high-pass) ahead of the AGC and the carrier loops, on by default: an SDR's centre
   spike, LO leakage or ADC offset otherwise biases the AGC and can fool the fourth-power carrier search.
   Switch it off in the window if a recording genuinely has no DC offset.
@@ -79,6 +109,8 @@ A command-line check of the receive chain without the window is built as well:
 ```
 hrit_cli <recording> [sample rate in Hz] [--no-repair]
 hrit_cli --formats
+hrit_cli --sdr
+hrit_cli --live hackrf|rtl [seconds]
 ```
 
 The GUI can be skipped for a quick command-line-only build (no Qt, no OpenJPEG/libjpeg-turbo):
@@ -99,7 +131,8 @@ to `main`/`master`, every pull request and on manual dispatch:
 
 - installs Qt 6.8.3 (win64_mingw) and the matching MinGW 13.1 toolchain;
 - fetches the pinned third-party sources (cached between runs);
-- configures, builds, runs CTest and checks that `hrit_cli --formats` reports ziq/ziq2 and zstd support;
+- configures, builds, runs CTest (including the SDR ring/enumeration tests) and checks that
+  `hrit_cli --formats` reports ziq/ziq2 and zstd support;
 - stages `dist\` with `windeployqt`, uploads a portable ZIP, and builds the Inno Setup installer when
   Inno Setup is available.
 
@@ -116,6 +149,10 @@ files carry it in the header. Choose your key file in the window, or put it next
 For compressed ZIQ and ZIQ2 the total sample count is not known until the end of the file: the window shows
 the progress by file position, and the repair pass (which seeks to exact sample positions) is skipped.
 
+For live reception choose the source in the window, set 1695.4 MHz and a rate of at least 3.15 MS/s
+(6 MS/s on HackRF, 3.2 MS/s on RTL-SDR), then start. The log reports received and dropped samples; the
+statistics and images are the same as for a recording.
+
 ## Licence
 
 The source code is released under the **GNU General Public License v3.0 or later**, see `LICENSE`.
@@ -124,6 +161,11 @@ Copyright (c) 2026 AGcov (BI2QYN).
 Third-party components keep their own licences: Qt (LGPL v3, dynamically linked), OpenJPEG (BSD-2-Clause), libjpeg-turbo
 (BSD-3-Clause / IJG / zlib), zstd (BSD-3-Clause, statically linked, used only to read compressed ZIQ), Natural Earth data
 (public domain). See `installer/THIRD_PARTY_NOTICES.txt` and `installer/LICENSES/`.
+
+The optional HackRF and RTL-SDR libraries are **not** part of this distribution: the program loads them
+at run time only when the corresponding source is selected, and they remain under their own licences
+(GPLv2 for both the HackRF host library and the RTL-SDR library; libusb is LGPL-2.1). Install them from
+their upstream projects and comply with those licences.
 
 `installer/EULA.txt` and `resources/eula.html` are the terms of use and disclaimer shown in the
 installer and in the program. The disclaimer parts (no warranty, no affiliation with KMA/NMSC, you are responsible for

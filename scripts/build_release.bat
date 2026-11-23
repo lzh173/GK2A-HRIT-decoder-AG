@@ -19,7 +19,7 @@ set "ROOT=%~dp0.."
 pushd "%ROOT%"
 set "ROOT=%CD%"
 set "APPEXE=NadirStation_GK2A-HRIT_decoder.exe"
-set "VERSION=1.1.0"
+set "VERSION=1.2.0"
 
 set "NEED_TP="
 if not exist "%ROOT%\third_party\openjpeg-2.5.3\CMakeLists.txt" set "NEED_TP=1"
@@ -46,6 +46,7 @@ copy /y "%ROOT%\resources\maps\ne_10m_admin_0_countries_chn.geojson" "%ROOT%\dis
 copy /y "%ROOT%\installer\EULA.txt" "%ROOT%\dist\" >nul || goto :fail
 copy /y "%ROOT%\installer\THIRD_PARTY_NOTICES.txt" "%ROOT%\dist\" >nul || goto :fail
 copy /y "%ROOT%\installer\LGPL_COMPLIANCE.txt" "%ROOT%\dist\" >nul || goto :fail
+copy /y "%ROOT%\installer\SDR_README.txt" "%ROOT%\dist\" >nul || goto :fail
 mkdir "%ROOT%\dist\LICENSES" || goto :fail
 copy /y "%ROOT%\installer\LICENSES\*.*" "%ROOT%\dist\LICENSES\" >nul || goto :fail
 rem DirectX shader compiler DLLs are not needed by this widgets program; do not ship them.

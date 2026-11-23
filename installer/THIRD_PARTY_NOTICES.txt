@@ -1,6 +1,6 @@
 NadirStation GK-2A HRIT Decoder - Third-party notices / 第三方组件声明
 =====================================================================
-Version 1.1.0. This program is (c) AGcov（BI2QYN）. It includes or links the components below. Their
+Version 1.2.0. This program is (c) AGcov（BI2QYN）. It includes or links the components below. Their
 copyright belongs to their owners. Full licence texts are in the LICENSES folder next to this file.
 本程序版权归 AGcov（BI2QYN）所有。下列组件的版权归各自权利人，许可证全文见同目录的 LICENSES 文件夹。
 
@@ -27,6 +27,15 @@ Natural Earth        -         Public domain                   Country boundarie
 MinGW-w64 runtime    -         GPL v3 + GCC Runtime Library    libstdc++-6.dll, libgcc_s_seh-1.dll,
  (libstdc++, libgcc,           Exception 3.1 / MIT-style       libwinpthread-1.dll shipped with the
  winpthreads)                  (LICENSES\MinGW-w64_runtime.txt) program.
+
+Optional runtime SDR libraries (NOT included in this package; loaded from the program folder or PATH
+only when the corresponding source is selected):
+可选实时 SDR 运行库（不在本安装包内；仅在选择相应信号源时从程序目录或 PATH 加载）：
+  HackRF host library (hackrf.dll)  GPLv2      copyright Great Scott Gadgets
+  RTL-SDR library (rtlsdr.dll)      GPLv2      copyright Osmocom / RTL-SDR contributors
+  libusb-1.0.dll                    LGPL-2.1   copyright the libusb developers
+These are separate, user-installed components; no code from them is compiled into this program.
+它们是独立的、由用户自行安装的组件，本程序未编译其代码。
 
 Third-party code inside Qt: the Qt libraries contain code under other licences (for example zlib, libpng,
 FreeType, HarfBuzz, PCRE2, double-conversion, and others). See
