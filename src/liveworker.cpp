@@ -1,5 +1,6 @@
 #include "liveworker.h"
 
+#include "androidoutput.h"
 #include "decodehelpers.h"
 #include "gk2ahritimages.h"
 
@@ -17,6 +18,9 @@ void LiveDecodeWorker::run(const hritapp::SdrConfig& config, const QString& outp
     using clock = std::chrono::steady_clock;
     stop_.store(false);
 
+#ifdef Q_OS_ANDROID
+    QDir(outputDir).removeRecursively();   // staging only: the previous run was already exported
+#endif
     if (!QDir().mkpath(outputDir)) {
         emit finished(false, QStringLiteral("无法创建输出文件夹：%1").arg(outputDir));
         return;
@@ -174,5 +178,15 @@ void LiveDecodeWorker::run(const hritapp::SdrConfig& config, const QString& outp
         summary += QStringLiteral("\n没有解出任何有效帧：请确认中心频率（GK-2A HRIT 1695.4 MHz）、采样率、增益和天线。");
     else if (observations == 0)
         summary += QStringLiteral("\n还没有拼出完整图像：接收时间可能不够（一幅全圆盘约需 10 分钟以上），或缺少密钥文件。");
+#ifdef Q_OS_ANDROID
+    emit logLine(QStringLiteral("正在把结果导出到所选目录…"));
+    QString exportError;
+    if (!hritapp::AndroidOutput::instance().exportDirectory(outputDir, exportError)) {
+        summary += QStringLiteral("\n导出到所选目录失败：") + exportError;
+        emit finished(false, summary);
+        return;
+    }
+    emit logLine(QStringLiteral("已导出到所选目录。"));
+#endif
     emit finished(!failed, summary);
 }

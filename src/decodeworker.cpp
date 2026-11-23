@@ -1,5 +1,6 @@
 #include "decodeworker.h"
 
+#include "androidoutput.h"
 #include "decodehelpers.h"
 #include "gk2ahritimages.h"
 #include "iqreader.h"
@@ -42,6 +43,9 @@ void DecodeWorker::run(const QString& inputPath, double manualRateHz, bool prefe
         emit finished(false, QString::fromUtf8(error.c_str()));
         return;
     }
+#ifdef Q_OS_ANDROID
+    QDir(outputDir).removeRecursively();   // staging only: the previous run was already exported
+#endif
     if (!QDir().mkpath(outputDir)) {
         emit finished(false, QStringLiteral("无法创建输出文件夹：%1").arg(outputDir));
         return;
@@ -170,5 +174,15 @@ void DecodeWorker::run(const QString& inputPath, double manualRateHz, bool prefe
         summary += QStringLiteral("\n没有解出任何有效帧：请确认采样率、信号强度（GK-2A HRIT 下行 1695.4 MHz，约 4.5 MHz 宽）和录音文件。");
     else if (observations == 0 && !stopped)
         summary += QStringLiteral("\n录音里的数据还不够拼出一幅图（一幅全圆盘约需 10 分钟以上的完整接收），或缺少密钥文件。");
+#ifdef Q_OS_ANDROID
+    emit logLine(QStringLiteral("正在把结果导出到所选目录…"));
+    QString exportError;
+    if (!hritapp::AndroidOutput::instance().exportDirectory(outputDir, exportError)) {
+        summary += QStringLiteral("\n导出到所选目录失败：") + exportError;
+        emit finished(false, summary);
+        return;
+    }
+    emit logLine(QStringLiteral("已导出到所选目录。"));
+#endif
     emit finished(true, summary);
 }

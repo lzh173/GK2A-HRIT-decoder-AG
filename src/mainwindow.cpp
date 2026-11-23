@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 
+#include "androidoutput.h"
 #include "appinfo.h"
 #include "constellationwidget.h"
 #include "iqreader.h"
@@ -135,7 +136,13 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     QSettings settings;
 #ifdef Q_OS_ANDROID
-    outputEdit_->setText(outputRoot());
+    outputEdit_->setText(hritapp::AndroidOutput::instance().hasTreeUri()
+                             ? hritapp::AndroidOutput::instance().displayName()
+                             : QStringLiteral("尚未选择输出目录"));
+    connect(&hritapp::AndroidOutput::instance(), &hritapp::AndroidOutput::treeUriChanged, this,
+            [this](const QString& display) {
+                outputEdit_->setText(display.isEmpty() ? QStringLiteral("尚未选择输出目录") : display);
+            });
 #else
     outputEdit_->setText(settings.value(QStringLiteral("outputDir"), outputRoot()).toString());
 #endif
@@ -328,10 +335,10 @@ void MainWindow::buildUi() {
     openOutBtn_ = new QPushButton(QStringLiteral("打开输出文件夹"));
     outLayout->addWidget(openOutBtn_);
 #ifdef Q_OS_ANDROID
-    browseOut->setVisible(false);
+    browseOut->setText(QStringLiteral("选择目录…"));
     openOutBtn_->setVisible(false);
     outputEdit_->setReadOnly(true);
-    auto* outHint = new QLabel(QStringLiteral("Android 将结果保存在应用私有目录；可用文件管理器或 adb 导出。"));
+    auto* outHint = new QLabel(QStringLiteral("选择手机上的目录；解码完成后会自动把结果导出到该目录。"));
     outHint->setObjectName(QStringLiteral("Muted"));
     outHint->setWordWrap(true);
     outLayout->addWidget(outHint);
@@ -490,12 +497,13 @@ void MainWindow::buildUi() {
 }
 
 QString MainWindow::outputRoot() const {
-    const QString typed = outputEdit_ ? outputEdit_->text().trimmed() : QString();
-    if (!typed.isEmpty()) return typed;
 #ifdef Q_OS_ANDROID
+    // Decode into app-private staging; the worker exports the finished tree to the SAF directory.
     const QString base = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     return QDir(base.isEmpty() ? QDir::homePath() : base).filePath(QStringLiteral("output"));
 #else
+    const QString typed = outputEdit_ ? outputEdit_->text().trimmed() : QString();
+    if (!typed.isEmpty()) return typed;
     return QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).filePath(QStringLiteral("NadirStation_GK2A-HRIT"));
 #endif
 }
@@ -593,8 +601,13 @@ void MainWindow::browseInput() {
 }
 
 void MainWindow::browseOutput() {
+#ifdef Q_OS_ANDROID
+    hritapp::AndroidOutput::instance().pickDirectory(this);
+    return;
+#else
     const QString dir = QFileDialog::getExistingDirectory(this, QStringLiteral("选择输出文件夹"), outputRoot());
     if (!dir.isEmpty()) outputEdit_->setText(QDir::toNativeSeparators(dir));
+#endif
 }
 
 void MainWindow::browseKey() {
@@ -715,7 +728,9 @@ void MainWindow::toggleRun() {
         }
         const hritapp::SdrConfig config = liveConfig();
         const QString out = outputRoot();
+#ifndef Q_OS_ANDROID
         outputEdit_->setText(QDir::toNativeSeparators(out));
+#endif
         QSettings settings;
         settings.setValue(QStringLiteral("outputDir"), outputEdit_->text());
         settings.setValue(QStringLiteral("keyFile"), keyEdit_->text());
@@ -756,10 +771,23 @@ void MainWindow::toggleRun() {
         QMessageBox::warning(this, QStringLiteral("录音不能用"), inputInfo_->text());
         return;
     }
+#ifdef Q_OS_ANDROID
+    if (!hritapp::AndroidOutput::instance().hasTreeUri()) {
+        QMessageBox::information(this, QStringLiteral("还没有选择输出目录"),
+                                 QStringLiteral("请先在“输出文件夹”里选择一个手机上的目录；解码完成后结果会自动导出到那里。"));
+        return;
+    }
+#endif
     const QString out = outputRoot();
+#ifndef Q_OS_ANDROID
     outputEdit_->setText(QDir::toNativeSeparators(out));
+#endif
     QSettings settings;
+#ifdef Q_OS_ANDROID
+    settings.setValue(QStringLiteral("androidOutputTree"), hritapp::AndroidOutput::instance().displayName());
+#else
     settings.setValue(QStringLiteral("outputDir"), outputEdit_->text());
+#endif
     settings.setValue(QStringLiteral("keyFile"), keyEdit_->text());
     settings.setValue(QStringLiteral("manualRateMsps"), rateSpin_->value());
     settings.setValue(QStringLiteral("dcBlock"), dcBlock_->isChecked());

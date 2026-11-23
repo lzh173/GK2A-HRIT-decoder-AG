@@ -184,7 +184,7 @@ if(HRIT_BUILD_GUI)
     set(APP_SOURCES
         src/main.cpp src/mainwindow.cpp src/mainwindow.h
         src/decodeworker.cpp src/decodeworker.h src/decodehelpers.cpp src/decodehelpers.h
-        src/liveworker.cpp src/liveworker.h
+        src/liveworker.cpp src/liveworker.h src/androidoutput.cpp src/androidoutput.h
         src/constellationwidget.cpp src/constellationwidget.h
         src/appinfo.h src/qtpath.h
         resources/app.qrc)
