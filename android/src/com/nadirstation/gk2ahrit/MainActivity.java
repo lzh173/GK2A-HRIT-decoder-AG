@@ -85,7 +85,7 @@ public class MainActivity extends QtActivity {
         }
     }
 
-    private Uri createDocument(ContentResolver resolver, Uri parent, String mime, String name) {
+    private Uri createDocument(ContentResolver resolver, Uri parent, String mime, String name) throws Exception {
         Uri document = DocumentsContract.createDocument(resolver, parent, mime, name);
         if (document != null) return document;
         int dot = name.lastIndexOf('.');
