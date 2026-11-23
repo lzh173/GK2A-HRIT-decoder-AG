@@ -46,7 +46,8 @@ jobs:
         shell: bash
         run: |
           if [ -z "${ANDROID_SDK_ROOT:-}" ]; then export ANDROID_SDK_ROOT="${ANDROID_HOME}"; fi
-          yes | sdkmanager --licenses > /dev/null
+          # Licences are already accepted by setup-android; feeding "yes" here trips pipefail.
+          sdkmanager --licenses > /dev/null 2>&1 || true
           sdkmanager --install \
             "platforms;android-${ANDROID_API}" \
             "build-tools;${ANDROID_BUILD_TOOLS}" \
