@@ -37,7 +37,7 @@ void LiveDecodeWorker::run(const hritapp::SdrConfig& config, const QString& outp
     }
 
     hritapp::HritPipeline pipe;
-    if (!pipe.configure(rate, error, dcBlock)) {
+    if (!pipe.configure(rate, error, dcBlock, false)) {
         source.close();
         emit finished(false, QString::fromUtf8(error.c_str()));
         return;

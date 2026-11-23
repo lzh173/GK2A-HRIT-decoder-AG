@@ -12,7 +12,7 @@ constexpr float kCarrierLoopBw = 0.0003f;
 constexpr float kTimingLoopBw = 0.0002f;
 }  // namespace
 
-bool HritPipeline::configure(double sampleRate, std::string& error, bool dcBlock) {
+bool HritPipeline::configure(double sampleRate, std::string& error, bool dcBlock, bool asyncLink) {
     configured_ = false;
     if (!(sampleRate >= kMinSampleRate)) {
         error = "GK-2A HRIT 的符号率是 3 Msym/s，采样率至少要 3.15 MS/s（推荐 4.5 MS/s 以上，6 MS/s 最佳）。";
@@ -23,7 +23,7 @@ bool HritPipeline::configure(double sampleRate, std::string& error, bool dcBlock
                      kTimingLoopBw);
     demod_.setDcBlock(dcBlock);
     link_.setRescueBudget(0.0);   // offline file decoding: no wall-clock limit on the soft-decision rescue
-    link_.setAsync(true);         // the link decoder gets its own thread, like in the live receiver
+    link_.setAsync(asyncLink);    // live decoding keeps the link decoder on the caller's thread
     configured_ = true;
     reset();
     return true;

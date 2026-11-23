@@ -471,9 +471,11 @@ void MainWindow::refreshDevices() {
     }
     if (devices.empty()) {
         deviceCombo_->addItem(QStringLiteral("未找到设备"));
-        if (!error.empty())
-            liveHint_->setText(liveHint_->text().section(QLatin1Char('\n'), 0, 0) + QStringLiteral("\n") +
-                               QString::fromUtf8(error.c_str()));
+        if (!error.empty()) {
+            const QString message = QString::fromUtf8(error.c_str());
+            liveHint_->setText(liveHint_->text().section(QLatin1Char('\n'), 0, 0) + QStringLiteral("\n") + message);
+            onLog(QStringLiteral("SDR: %1").arg(message));
+        }
     } else {
         liveHint_->setText(liveHint_->text().section(QLatin1Char('\n'), 0, 0) +
                            QStringLiteral("\n找到 %1 个设备。").arg(devices.size()));

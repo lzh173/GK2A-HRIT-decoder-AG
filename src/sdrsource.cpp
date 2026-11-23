@@ -47,23 +47,48 @@ public:
 
     bool open(const std::vector<std::string>& names, std::string& error) {
         close();
-        for (const std::string& name : names) {
 #ifdef _WIN32
-            const std::wstring dir = executableDirectory();
+        // A missing entry point in a dependency must become a normal error, not a modal Windows
+        // dialog that blocks the application.
+        static std::once_flag once;
+        std::call_once(once, [] { SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX); });
+        const std::wstring dir = executableDirectory();
+        DWORD lastError = 0;
+        for (const std::string& name : names) {
+            std::vector<std::wstring> candidates;
             if (!dir.empty()) {
-                const std::wstring full = (std::filesystem::path(dir) / widen(name)).wstring();
-                handle_ = LoadLibraryW(full.c_str());
+                // A dedicated sdr\ subfolder keeps the matching libusb/pthread DLLs together and
+                // avoids mixing versions from different SDR packages.
+                candidates.push_back((std::filesystem::path(dir) / L"sdr" / widen(name)).wstring());
+                candidates.push_back((std::filesystem::path(dir) / widen(name)).wstring());
+            }
+            for (const std::wstring& full : candidates) {
+                if (!std::filesystem::exists(full)) continue;
+                handle_ = LoadLibraryExW(full.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
                 if (handle_) return true;
+                lastError = GetLastError();
             }
             handle_ = LoadLibraryW(widen(name).c_str());
             if (handle_) return true;
+            lastError = GetLastError();
+        }
+        error = "无法加载 " + names.front() + "（Windows 错误 " + std::to_string(lastError) + "）";
+        if (lastError == ERROR_PROC_NOT_FOUND || lastError == ERROR_MOD_NOT_FOUND ||
+            lastError == ERROR_DLL_NOT_FOUND) {
+            error += "：依赖 DLL 版本不匹配。请把同一套 SDR 库（含 libusb-1.0.dll、pthreadVC3.dll）"
+                     "放到程序目录或 sdr\\ 子目录，不要混用不同来源的版本。";
+        } else {
+            error += "；请把库文件放到程序目录或 sdr\\ 子目录。";
+        }
+        return false;
 #else
+        for (const std::string& name : names) {
             handle_ = dlopen(name.c_str(), RTLD_NOW | RTLD_LOCAL);
             if (handle_) return true;
-#endif
         }
         error = "无法加载 " + names.front() + "；请把库文件放到程序目录，或加入系统 PATH。";
         return false;
+#endif
     }
 
     void close() {
@@ -655,14 +680,17 @@ std::vector<SdrDeviceInfo> SdrSource::enumerate(SdrKind kind, std::string& error
         auto exitFn = reinterpret_cast<hackrf_exit_fn>(lib.symbol("hackrf_exit"));
         auto listFn = reinterpret_cast<hackrf_device_list_fn>(lib.symbol("hackrf_device_list"));
         auto freeFn = reinterpret_cast<hackrf_device_list_free_fn>(lib.symbol("hackrf_device_list_free"));
-        const bool initialized = initFn && initFn() == 0;
-        if (!initialized) {
-            error = "HackRF 初始化失败（检查驱动与 USB 连接）。";
+        const int init = initFn ? initFn() : -1;
+        if (init != 0) {
+            error = "HackRF 初始化失败（错误 " + std::to_string(init) + "）；检查驱动、USB 连接，"
+                    "并关闭其他占用设备的程序。";
             return devices;
         }
+        bool listed = false;
         if (listFn && freeFn) {
             hackrf_device_list* list = listFn();
             if (list) {
+                listed = true;
                 for (int i = 0; i < list->devicecount; ++i) {
                     const char* serial = list->serial_numbers ? list->serial_numbers[i] : nullptr;
                     std::string id = serial ? serial : "";
@@ -673,7 +701,9 @@ std::vector<SdrDeviceInfo> SdrSource::enumerate(SdrKind kind, std::string& error
             }
         }
         if (exitFn) exitFn();
-        if (devices.empty() && error.empty())
+        if (listed && devices.empty())
+            error = "未找到 HackRF 设备（检查驱动与 USB 连接，并关闭其他占用设备的程序）。";
+        else if (!listed && devices.empty())
             devices.push_back({kind, 0, "", "HackRF（第一个可用设备）"});
         return devices;
     }

@@ -204,6 +204,7 @@ if(HRIT_BUILD_CLI)
     add_executable(HritCli tests/test_pipeline.cpp)
     target_link_libraries(HritCli PRIVATE hrit_core)
     set_target_properties(HritCli PROPERTIES OUTPUT_NAME hrit_cli)
+    install(TARGETS HritCli RUNTIME DESTINATION .)
 endif()
 
 if(HRIT_BUILD_TESTS)

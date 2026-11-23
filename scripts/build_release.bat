@@ -39,6 +39,7 @@ echo [4/5] Collect runtime files into dist\
 if exist "%ROOT%\dist" rmdir /s /q "%ROOT%\dist"
 mkdir "%ROOT%\dist" || goto :fail
 copy /y "%ROOT%\build\%APPEXE%" "%ROOT%\dist\" >nul || goto :fail
+copy /y "%ROOT%\build\hrit_cli.exe" "%ROOT%\dist\" >nul || goto :fail
 windeployqt --release --no-translations --no-system-d3d-compiler --no-opengl-sw "%ROOT%\dist\%APPEXE%" || goto :fail
 mkdir "%ROOT%\dist\resources\maps" || goto :fail
 copy /y "%ROOT%\resources\maps\landmask.jpg" "%ROOT%\dist\resources\maps\" >nul || goto :fail

@@ -41,7 +41,9 @@ public:
 
     // false (with a message) when the sample rate cannot carry the signal.
     // dcBlock removes the DC offset (LO leakage / SDR centre spike) before the AGC and carrier loops.
-    bool configure(double sampleRate, std::string& error, bool dcBlock = true);
+    // asyncLink runs the Viterbi/RS link decoder on its own thread; live input keeps it synchronous so
+    // the device callback and the decoder never compete for the same queue at shutdown.
+    bool configure(double sampleRate, std::string& error, bool dcBlock = true, bool asyncLink = true);
     void reset();
     // One block of IQ. Completed LRIT files are handed to onFile. Returns the symbols of this block (for the display).
     const std::vector<std::complex<float>>& process(const std::vector<std::complex<float>>& iq,

@@ -10,8 +10,24 @@ driver yourself, under their own licences:
   libusb:    libusb-1.0.dll                             (LGPL-2.1)
 
 Put the DLLs next to this program (the folder containing NadirStation_GK2A-HRIT_decoder.exe), or
-add their folder to PATH. Install the vendor driver (WinUSB via Zadig for an RTL-SDR; the HackRF
-driver package for a HackRF), then choose "HackRF" or "RTL-SDR" in the signal-source list.
+in an "sdr" subfolder next to it, or add their folder to PATH. Keep all DLLs from the same SDR
+package together: rtlsdr.dll and hackrf.dll each need the libusb-1.0.dll they were built against.
+Mixing an old libusb with a newer rtlsdr.dll produces "entry point libusb_* not found".
+Install the vendor driver (WinUSB via Zadig for an RTL-SDR; the HackRF driver package for a HackRF),
+then choose "HackRF" or "RTL-SDR" in the signal-source list.
+
+Diagnose from a console in this folder:
+
+  hrit_cli --sdr
+
+It prints which library could not be loaded, or how many devices were found. For a live check:
+
+  hrit_cli --live rtl 10
+  hrit_cli --live hackrf 10
+
+If HackRF is not found, close other SDR programs, try another USB 2.0 port and cable, and check the
+driver; the log reports whether hackrf.dll loaded at all. If streaming starts and then reports an
+error, the port/cable is not delivering enough power or bandwidth for 6 MS/s.
 
 Recommended settings for the GK-2A HRIT downlink:
 

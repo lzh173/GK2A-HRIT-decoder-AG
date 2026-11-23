@@ -74,7 +74,7 @@ int main(int argc, char** argv) {
             return 1;
         }
         hritapp::HritPipeline pipe;
-        if (!pipe.configure(source.sampleRate(), error)) {
+        if (!pipe.configure(source.sampleRate(), error, true, false)) {
             source.close();
             std::fprintf(stderr, "configure: %s\n", error.c_str());
             return 1;
