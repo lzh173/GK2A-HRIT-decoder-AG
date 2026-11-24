@@ -14,7 +14,7 @@
 #include <vector>
 
 void LiveDecodeWorker::run(const hritapp::SdrConfig& config, const QString& outputDir, const QString& keyPath,
-                           bool dcBlock) {
+                           bool dcBlock, double carrierOffsetHintHz) {
     using clock = std::chrono::steady_clock;
     stop_.store(false);
 
@@ -41,7 +41,7 @@ void LiveDecodeWorker::run(const hritapp::SdrConfig& config, const QString& outp
     }
 
     hritapp::HritPipeline pipe;
-    if (!pipe.configure(rate, error, dcBlock, false)) {
+    if (!pipe.configure(rate, error, dcBlock, false, carrierOffsetHintHz)) {
         source.close();
         emit finished(false, QString::fromUtf8(error.c_str()));
         return;

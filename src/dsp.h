@@ -65,6 +65,14 @@ public:
     void configure(float sampleRate, float symbolRate = 660000.0f, float rrcAlpha = 0.5f, float loopBandwidth = 0.02f);
     // Carrier loop start frequency, radians per sample at the demodulator rate (sampleRate()).
     void setInitialCarrierOffset(float radiansPerSample) { initialCarrierOffset_ = radiansPerSample; }
+    // Optional acquisition hint. halfWidthHz > 0 restricts the fourth-power search to
+    // centerHz +/- halfWidthHz and starts the loop at centerHz; this can be outside the automatic
+    // +/-250 kHz limit when the user knows the recording's offset. halfWidthHz <= 0 keeps the
+    // automatic full search and limit.
+    void setCarrierSearch(float centerHz, float halfWidthHz) {
+        carrierSearchCenterHz_ = centerHz;
+        carrierSearchHalfWidthHz_ = halfWidthHz;
+    }
     void setQpsk(bool enabled) { qpsk_ = enabled; }
     // Matched filter for an unfiltered (rectangular NRZ) transmitter: integrate-and-dump over one
     // symbol instead of an RRC. Takes effect at the next configure().
@@ -91,6 +99,7 @@ private:
     std::complex<float> interpolate(double t) const;
     void acquire();
     void track(std::complex<float> z, DPSKResult& out);
+    double clampFreq(double freq) const;
     std::vector<std::complex<float>> front(const std::vector<std::complex<float>>& iq);   // stage 1: filters + AGC
     DPSKResult back(const std::vector<std::complex<float>>& agc);                          // stage 2: carrier / timing loops
 
@@ -114,6 +123,8 @@ private:
     bool qpsk_ = false;
     bool rectPulse_ = false;
     float initialCarrierOffset_ = 0.0f;
+    float carrierSearchCenterHz_ = 0.0f;
+    float carrierSearchHalfWidthHz_ = 0.0f;
 
     // decimator
     std::vector<float> aaTaps_;
@@ -190,6 +201,14 @@ public:
     void configure(float sampleRate, float symbolRate = 3000000.0f, float rrcAlpha = 0.5f,
                    float carrierLoopBw = 0.004f, float timingLoopBw = 0.0008f);
     void setInitialCarrierOffset(float radiansPerSample) { initialCarrierOffset_ = radiansPerSample; }
+    // Optional acquisition hint. halfWidthHz > 0 restricts the fourth-power search to
+    // centerHz +/- halfWidthHz and starts the loop at centerHz; this can be outside the automatic
+    // +/-250 kHz limit when the user knows the recording's offset. halfWidthHz <= 0 keeps the
+    // automatic full search and limit.
+    void setCarrierSearch(float centerHz, float halfWidthHz) {
+        carrierSearchCenterHz_ = centerHz;
+        carrierSearchHalfWidthHz_ = halfWidthHz;
+    }
     void reset();
     DPSKResult process(const std::vector<std::complex<float>>& iq);
 
@@ -234,6 +253,7 @@ public:
 private:
     void acquire();
     void track(std::complex<float> z, DPSKResult& out);
+    double clampFreq(double freq) const;
     std::complex<float> mf(double t) const;
 
     // Below 1.5 samples a symbol (RTL-SDR at 3.2 MS/s for the 3 Msym/s HRIT link) the tuner's IF
@@ -261,6 +281,8 @@ private:
     double sps_ = 2.0;
     bool configured_ = false;
     float initialCarrierOffset_ = 0.0f;
+    float carrierSearchCenterHz_ = 0.0f;
+    float carrierSearchHalfWidthHz_ = 0.0f;
 
     std::vector<float> aaTaps_;
     std::vector<std::complex<float>> aaHist_;

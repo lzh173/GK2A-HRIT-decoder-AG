@@ -19,7 +19,7 @@ set "ROOT=%~dp0.."
 pushd "%ROOT%"
 set "ROOT=%CD%"
 set "APPEXE=NadirStation_GK2A-HRIT_decoder.exe"
-set "VERSION=1.4.0"
+set "VERSION=1.5.0"
 
 set "NEED_TP="
 if not exist "%ROOT%\third_party\openjpeg-2.5.3\CMakeLists.txt" set "NEED_TP=1"

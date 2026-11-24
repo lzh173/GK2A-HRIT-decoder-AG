@@ -20,7 +20,8 @@ public:
     void requestStop() { stop_.store(true); }
 
 public slots:
-    void run(const hritapp::SdrConfig& config, const QString& outputDir, const QString& keyPath, bool dcBlock);
+    void run(const hritapp::SdrConfig& config, const QString& outputDir, const QString& keyPath, bool dcBlock,
+             double carrierOffsetHintHz);
 
 signals:
     void inputInfo(const QString& description, double sampleRate);

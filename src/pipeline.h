@@ -43,7 +43,11 @@ public:
     // dcBlock removes the DC offset (LO leakage / SDR centre spike) before the AGC and carrier loops.
     // asyncLink runs the Viterbi/RS link decoder on its own thread; live input keeps it synchronous so
     // the device callback and the decoder never compete for the same queue at shutdown.
-    bool configure(double sampleRate, std::string& error, bool dcBlock = true, bool asyncLink = true);
+    // carrierOffsetHintHz != 0 seeds the NCO and searches +/-50 kHz around that user-supplied offset,
+    // which is useful when the recording is known to be shifted or automatic search is fooled. 0 keeps
+    // the automatic full search (capped at +/-250 kHz).
+    bool configure(double sampleRate, std::string& error, bool dcBlock = true, bool asyncLink = true,
+                   double carrierOffsetHintHz = 0.0);
     void reset();
     // One block of IQ. Completed LRIT files are handed to onFile. Returns the symbols of this block (for the display).
     const std::vector<std::complex<float>>& process(const std::vector<std::complex<float>>& iq,

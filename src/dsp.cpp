@@ -434,6 +434,18 @@ void PskDemod::buildFilters() {
     loopGains(PSK_TIMING_BW, tKp_, tKi_);
 }
 
+double PskDemod::clampFreq(double freq) const {
+    const double nyquist = 0.98 * 3.141592653589793238462643383279502884;
+    if (carrierSearchHalfWidthHz_ > 0.0f) {
+        const double center = 2.0 * 3.141592653589793238462643383279502884 *
+                              static_cast<double>(carrierSearchCenterHz_) / static_cast<double>(rate_);
+        const double half = 2.0 * 3.141592653589793238462643383279502884 *
+                            (static_cast<double>(carrierSearchHalfWidthHz_) + 20000.0) / static_cast<double>(rate_);
+        return std::clamp(freq, center - half, center + half);
+    }
+    return std::clamp(clampCarrierOffset(freq, rate_), -nyquist, nyquist);
+}
+
 void PskDemod::reset() {
     upHist_.assign(up_ > 1 ? 2 * upLen_ + 4 : 0, {0, 0});
     upPos_ = 0;
@@ -442,7 +454,7 @@ void PskDemod::reset() {
     aaPhase_ = 0;
     power_ = 1.0f;
     phase_ = 0.0;
-    freq_ = clampCarrierOffset(initialCarrierOffset_, rate_);
+    freq_ = clampFreq(initialCarrierOffset_);
     mfHist_.assign(2 * rrc_.size() + 4, {0, 0});
     mfPos_ = 0;
     buf_.clear();
@@ -476,10 +488,14 @@ void PskDemod::acquire() {
     std::size_t best = 0;
     bool found = false;
     double bestPower = -1.0;
-    const double maxBin = kMaxCarrierOffsetHz * static_cast<double>(n) * (qpsk_ ? 4.0 : 2.0) / rate_;
+    const bool hinted = carrierSearchHalfWidthHz_ > 0.0f;
+    const double mult = qpsk_ ? 4.0 : 2.0;
+    const double maxBin = kMaxCarrierOffsetHz * static_cast<double>(n) * mult / rate_;
+    const double halfBin = static_cast<double>(carrierSearchHalfWidthHz_) * static_cast<double>(n) * mult / rate_;
+    const double centerBin = static_cast<double>(carrierSearchCenterHz_) * static_cast<double>(n) * mult / rate_;
     for (std::size_t k = 0; k < n; ++k) {
         const double signedBin = k <= n / 2 ? static_cast<double>(k) : static_cast<double>(k) - static_cast<double>(n);
-        if (std::fabs(signedBin) > maxBin) continue;
+        if (hinted ? std::fabs(signedBin - centerBin) > halfBin : std::fabs(signedBin) > maxBin) continue;
         const double p = std::norm(a[k]);
         if (p > bestPower) { bestPower = p; best = k; found = true; }
     }
@@ -491,7 +507,9 @@ void PskDemod::acquire() {
     double bin = static_cast<double>(best) + delta;
     if (bin > static_cast<double>(n) / 2.0) bin -= static_cast<double>(n);
     // Line at 2*offset, in cycles per sample -> offset in radians per sample.
-    freq_ = clampCarrierOffset(2.0 * kPi * (bin / static_cast<double>(n)) / (qpsk_ ? 4.0 : 2.0), rate_);
+    freq_ = clampFreq(2.0 * kPi * (bin / static_cast<double>(n)) / mult);
+    if (!found && hinted)
+        freq_ = clampFreq(2.0 * kPi * static_cast<double>(carrierSearchCenterHz_) / static_cast<double>(rate_));
     phase_ = 0.0;
     // A carrier reacquisition often follows a signal fade. During the fade the timing loop
     // continues to see AGC-normalised noise, so its period, interpolator history and matched
@@ -805,7 +823,7 @@ void PskDemod::track(std::complex<float> z, DPSKResult& out) {
         const double phaseError = static_cast<double>(s.imag()) * (s.real() >= 0.f ? 1. : -1.)
             - (qpsk_ ? static_cast<double>(s.real()) * (s.imag() >= 0.f ? 1. : -1.) : 0.);
         const double ec = std::clamp(phaseError / ampAvg_, -1., 1.);
-        freq_ = clampCarrierOffset(freq_ + cKi_ * ec / period_, rate_);
+        freq_ = clampFreq(freq_ + cKi_ * ec / period_);
         phase_ += cKp_ * ec;
         period_ = std::clamp(period_ + tKi_ * et, periodMin, periodMax);
         next_ += 0.5 * period_ + tKp_ * et * period_ * 0.5;
@@ -968,13 +986,25 @@ void QpskDemod::configure(float sampleRate, float symbolRate, float rrcAlpha, fl
     configured_ = true;
 }
 
+double QpskDemod::clampFreq(double freq) const {
+    const double nyquist = 0.98 * 3.141592653589793238462643383279502884;
+    if (carrierSearchHalfWidthHz_ > 0.0f) {
+        const double center = 2.0 * 3.141592653589793238462643383279502884 *
+                              static_cast<double>(carrierSearchCenterHz_) / static_cast<double>(rate_);
+        const double half = 2.0 * 3.141592653589793238462643383279502884 *
+                            (static_cast<double>(carrierSearchHalfWidthHz_) + 20000.0) / static_cast<double>(rate_);
+        return std::clamp(freq, center - half, center + half);
+    }
+    return std::clamp(clampCarrierOffset(freq, rate_), -nyquist, nyquist);
+}
+
 void QpskDemod::reset() {
     aaHist_.assign(aaTaps_.size(), {0, 0});
     aaPos_ = 0;
     aaPhase_ = 0;
     power_ = 1.0f;
     phase_ = 0.0;
-    freq_ = clampCarrierOffset(initialCarrierOffset_, rate_);
+    freq_ = clampFreq(initialCarrierOffset_);
     ncoCount_ = 0;
     buf_.clear();
     base_ = 0.0;
@@ -1004,10 +1034,13 @@ void QpskDemod::acquire() {
     std::size_t best = 0;
     bool found = false;
     double bestPower = -1.0;
+    const bool hinted = carrierSearchHalfWidthHz_ > 0.0f;
     const double maxBin = kMaxCarrierOffsetHz * static_cast<double>(n) * 4.0 / rate_;
+    const double halfBin = static_cast<double>(carrierSearchHalfWidthHz_) * static_cast<double>(n) * 4.0 / rate_;
+    const double centerBin = static_cast<double>(carrierSearchCenterHz_) * static_cast<double>(n) * 4.0 / rate_;
     for (std::size_t k = 0; k < n; ++k) {
         const double signedBin = k <= n / 2 ? static_cast<double>(k) : static_cast<double>(k) - static_cast<double>(n);
-        if (std::fabs(signedBin) > maxBin) continue;
+        if (hinted ? std::fabs(signedBin - centerBin) > halfBin : std::fabs(signedBin) > maxBin) continue;
         const double p = std::norm(a[k]);
         if (p > bestPower) { bestPower = p; best = k; found = true; }
     }
@@ -1018,7 +1051,9 @@ void QpskDemod::acquire() {
     const double delta = std::fabs(den) > 1e-12 ? std::clamp(0.5 * (l - r) / den, -0.5, 0.5) : 0.0;
     double bin = static_cast<double>(best) + delta;
     if (bin > static_cast<double>(n) / 2.0) bin -= static_cast<double>(n);
-    freq_ = clampCarrierOffset(2.0 * kPi * (bin / static_cast<double>(n)) / 4.0, rate_);
+    freq_ = clampFreq(2.0 * kPi * (bin / static_cast<double>(n)) / 4.0);
+    if (!found && hinted)
+        freq_ = clampFreq(2.0 * kPi * static_cast<double>(carrierSearchCenterHz_) / static_cast<double>(rate_));
     phase_ = 0.0;
     buf_.clear();
     base_ = 0.0;
@@ -1148,7 +1183,7 @@ void QpskDemod::track(std::complex<float> z, DPSKResult& out) {
             // at the next resync.
             cErrAcc_ += ec * ec; ++cErrN_;
             const double df = cKi_ * ec / period_, dp = cKp_ * ec;
-            freq_ = clampCarrierOffset(freq_ + df, rate_);
+            freq_ = clampFreq(freq_ + df);
             phase_ += dp;
             {
                 const double cs = 1.0 - 0.5 * df * df, sn = -df;

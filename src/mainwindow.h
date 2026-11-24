@@ -31,9 +31,9 @@ public:
 
 signals:
     void startRequested(const QString& inputPath, double manualRateHz, bool preferManual, const QString& outputDir,
-                        const QString& keyPath, bool dcBlock);
+                        const QString& keyPath, bool dcBlock, double carrierOffsetHintHz);
     void startLiveRequested(const hritapp::SdrConfig& config, const QString& outputDir, const QString& keyPath,
-                            bool dcBlock);
+                            bool dcBlock, double carrierOffsetHintHz);
 
 protected:
     void closeEvent(QCloseEvent* event) override;
@@ -91,6 +91,7 @@ private:
     QLabel* inputInfo_ = nullptr;
     QCheckBox* manualRate_ = nullptr;
     QCheckBox* dcBlock_ = nullptr;
+    QDoubleSpinBox* carrierHint_ = nullptr;
     QDoubleSpinBox* rateSpin_ = nullptr;
     QLineEdit* outputEdit_ = nullptr;
     QLineEdit* keyEdit_ = nullptr;

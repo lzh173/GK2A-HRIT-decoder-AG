@@ -1,6 +1,6 @@
 NadirStation GK-2A HRIT Decoder - Third-party notices / 第三方组件声明
 =====================================================================
-Version 1.4.0. This program is (c) AGcov（BI2QYN）. It includes or links the components below. Their
+Version 1.5.0. This program is (c) AGcov（BI2QYN）. It includes or links the components below. Their
 copyright belongs to their owners. Full licence texts are in the LICENSES folder next to this file.
 本程序版权归 AGcov（BI2QYN）所有。下列组件的版权归各自权利人，许可证全文见同目录的 LICENSES 文件夹。
 

@@ -12,13 +12,23 @@ constexpr float kCarrierLoopBw = 0.0003f;
 constexpr float kTimingLoopBw = 0.0002f;
 }  // namespace
 
-bool HritPipeline::configure(double sampleRate, std::string& error, bool dcBlock, bool asyncLink) {
+bool HritPipeline::configure(double sampleRate, std::string& error, bool dcBlock, bool asyncLink,
+                             double carrierOffsetHintHz) {
     configured_ = false;
     if (!(sampleRate >= kMinSampleRate)) {
         error = "GK-2A HRIT 的符号率是 3 Msym/s，采样率至少要 3.15 MS/s（推荐 4.5 MS/s 以上，6 MS/s 最佳）。";
         return false;
     }
     sampleRate_ = sampleRate;
+    const bool hinted = std::isfinite(carrierOffsetHintHz) && std::fabs(carrierOffsetHintHz) > 1.0;
+    if (hinted) {
+        constexpr float kHintHalfWidthHz = 50000.0f;
+        demod_.setInitialCarrierOffset(static_cast<float>(2.0 * 3.14159265358979323846 * carrierOffsetHintHz / sampleRate));
+        demod_.setCarrierSearch(static_cast<float>(carrierOffsetHintHz), kHintHalfWidthHz);
+    } else {
+        demod_.setInitialCarrierOffset(0.0f);
+        demod_.setCarrierSearch(0.0f, 0.0f);
+    }
     demod_.configure(static_cast<float>(sampleRate), static_cast<float>(kSymbolRate), kRrcAlpha, kCarrierLoopBw,
                      kTimingLoopBw);
     demod_.setDcBlock(dcBlock);

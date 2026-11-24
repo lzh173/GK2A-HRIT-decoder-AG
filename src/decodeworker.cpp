@@ -17,7 +17,7 @@
 #include <string>
 
 void DecodeWorker::run(const QString& inputPath, double manualRateHz, bool preferManual, const QString& outputDir,
-                       const QString& keyPath, bool dcBlock) {
+                       const QString& keyPath, bool dcBlock, double carrierOffsetHintHz) {
     using clock = std::chrono::steady_clock;
     stop_.store(false);
 
@@ -39,7 +39,7 @@ void DecodeWorker::run(const QString& inputPath, double manualRateHz, bool prefe
                    info.sampleRate);
 
     hritapp::HritPipeline pipe;
-    if (!pipe.configure(info.sampleRate, error, dcBlock)) {
+    if (!pipe.configure(info.sampleRate, error, dcBlock, true, carrierOffsetHintHz)) {
         emit finished(false, QString::fromUtf8(error.c_str()));
         return;
     }
@@ -144,7 +144,8 @@ void DecodeWorker::run(const QString& inputPath, double manualRateHz, bool prefe
         auto frames = std::move(pipe.collectedFrames());
         const auto rep = hritapp::repairFrames(
             reader, frames, [this] { return stop_.load(); },
-            [this](const std::string& m) { emit logLine(QString::fromUtf8(m.c_str())); }, 240.0, dcBlock);
+            [this](const std::string& m) { emit logLine(QString::fromUtf8(m.c_str())); }, 240.0, dcBlock,
+            carrierOffsetHintHz);
         if (rep.framesRecovered > 0) {
             int rebuilt = 0, skipped = 0;
             hritapp::HritPipeline::assembleFrames(frames, [&](nadirstation::gk2a::LritFile&& f) {

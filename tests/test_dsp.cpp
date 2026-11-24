@@ -110,6 +110,24 @@ int main() {
         check(std::fabs(demod.carrierOffsetHz()) <= 251000.0f, "initial carrier offset is clamped");
     }
 
+    // A user-supplied starting offset restricts acquisition to +/-50 kHz around it, even when a
+    // stronger CW sits elsewhere. This is the escape hatch for a known offset or a false lock.
+    {
+        PskDemod demod;
+        demod.setQpsk(true);
+        demod.setRectangularPulse(true);
+        demod.setCarrierSearch(-100000.0f, 50000.0f);
+        demod.configure(6000000.0f, 3000000.0f, 0.5f, 0.02f);
+        std::vector<std::complex<float>> iq(131072);
+        for (std::size_t i = 0; i < iq.size(); ++i) {
+            const double phase = 2.0 * 3.14159265358979323846 * 633851.0 * static_cast<double>(i) / 6000000.0;
+            iq[i] = {static_cast<float>(std::cos(phase)), static_cast<float>(std::sin(phase))};
+        }
+        const auto result = demod.process(iq);
+        check(result.carrierOffsetHz < -30000.0f && result.carrierOffsetHz > -170000.0f,
+              "user carrier hint is honoured instead of the CW");
+    }
+
     if (g_failures == 0) std::printf("all dsp tests passed\n");
     else std::fprintf(stderr, "%d dsp test(s) failed\n", g_failures);
     return g_failures == 0 ? 0 : 1;

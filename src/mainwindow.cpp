@@ -154,6 +154,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     keyEdit_->setText(settings.value(QStringLiteral("keyFile")).toString());
     rateSpin_->setValue(settings.value(QStringLiteral("manualRateMsps"), 6.0).toDouble());
     dcBlock_->setChecked(settings.value(QStringLiteral("dcBlock"), true).toBool());
+    carrierHint_->setValue(settings.value(QStringLiteral("carrierHintKHz"), 0.0).toDouble());
 
     const int source = std::clamp(settings.value(QStringLiteral("source"), 0).toInt(), 0, 2);
     {
@@ -322,6 +323,21 @@ void MainWindow::buildUi() {
     dcBlock_->setToolTip(QStringLiteral("在解调前用 500 Hz 高通去掉 I/Q 的直流偏置：SDR 的中心尖峰、本振泄漏和 ADC 偏置都会让 AGC 和载波环偏离。\n"
                                         "HRIT 信号从直流一直铺到约 2.25 MHz，500 Hz 的拐点对信号几乎没有影响。只有确认录音本身没有直流问题时才需要关掉。"));
     leftLayout->addWidget(dcBlock_);
+
+    auto* carrierRow = new QHBoxLayout;
+    auto* carrierLabel = new QLabel(QStringLiteral("起始频偏"));
+    carrierHint_ = new QDoubleSpinBox;
+    carrierHint_->setRange(-1500.0, 1500.0);
+    carrierHint_->setDecimals(1);
+    carrierHint_->setSingleStep(5.0);
+    carrierHint_->setSuffix(QStringLiteral(" kHz"));
+    carrierHint_->setValue(0.0);
+    carrierHint_->setToolTip(QStringLiteral("0 = 自动搜索（±250 kHz）。\n"
+                                            "非 0 = 从这个频偏开始，只在该值 ±50 kHz 内搜索；用于已知频偏的录音，"
+                                            "或自动搜索被干扰空载波带偏时。可以超过自动的 ±250 kHz 上限。"));
+    carrierRow->addWidget(carrierLabel);
+    carrierRow->addWidget(carrierHint_, 1);
+    leftLayout->addLayout(carrierRow);
 
     auto* outBox = new QGroupBox(QStringLiteral("3  输出文件夹"));
     auto* outLayout = new QVBoxLayout(outBox);
@@ -753,6 +769,7 @@ void MainWindow::toggleRun() {
         settings.setValue(QStringLiteral("keyFile"), keyEdit_->text());
         settings.setValue(QStringLiteral("source"), sourceCombo_->currentIndex());
         settings.setValue(QStringLiteral("dcBlock"), dcBlock_->isChecked());
+    settings.setValue(QStringLiteral("carrierHintKHz"), carrierHint_->value());
         settings.setValue(QStringLiteral("liveFreqMHz"), liveFreq_->value());
         settings.setValue(QStringLiteral("liveRateMsps"), liveRate_->value());
         settings.setValue(QStringLiteral("liveGainDb"), liveGain_->value());
@@ -773,7 +790,8 @@ void MainWindow::toggleRun() {
         progress_->setValue(0);
         onStats(hritapp::PipelineStats{});
         setRunning(true);
-        emit startLiveRequested(config, out, keyEdit_->text().trimmed(), dcBlock_->isChecked());
+        emit startLiveRequested(config, out, keyEdit_->text().trimmed(), dcBlock_->isChecked(),
+                                carrierHint_->value() * 1000.0);
         return;
     }
 
@@ -801,6 +819,7 @@ void MainWindow::toggleRun() {
     settings.setValue(QStringLiteral("keyFile"), keyEdit_->text());
     settings.setValue(QStringLiteral("manualRateMsps"), rateSpin_->value());
     settings.setValue(QStringLiteral("dcBlock"), dcBlock_->isChecked());
+    settings.setValue(QStringLiteral("carrierHintKHz"), carrierHint_->value());
     settings.setValue(QStringLiteral("source"), sourceCombo_->currentIndex());
 
     log_->clear();
@@ -814,7 +833,7 @@ void MainWindow::toggleRun() {
     onStats(hritapp::PipelineStats{});
     setRunning(true);
     emit startRequested(path, rateSpin_->value() * 1e6, manualRate_->isChecked(), out, keyEdit_->text().trimmed(),
-                        dcBlock_->isChecked());
+                        dcBlock_->isChecked(), carrierHint_->value() * 1000.0);
 }
 
 void MainWindow::setRunning(bool running) {
@@ -968,6 +987,7 @@ void MainWindow::closeEvent(QCloseEvent* event) {
     settings.setValue(QStringLiteral("keyFile"), keyEdit_->text());
     settings.setValue(QStringLiteral("manualRateMsps"), rateSpin_->value());
     settings.setValue(QStringLiteral("dcBlock"), dcBlock_->isChecked());
+    settings.setValue(QStringLiteral("carrierHintKHz"), carrierHint_->value());
     settings.setValue(QStringLiteral("source"), sourceCombo_->currentIndex());
     settings.setValue(QStringLiteral("liveFreqMHz"), liveFreq_->value());
     settings.setValue(QStringLiteral("liveRateMsps"), liveRate_->value());
