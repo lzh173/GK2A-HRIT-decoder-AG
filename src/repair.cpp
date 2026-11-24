@@ -63,7 +63,7 @@ std::vector<std::vector<std::uint8_t>> decodeWindow(IqReader& reader, std::uint6
     nadirstation::dsp::QpskDemod demod;
     if (std::isfinite(carrierOffsetHintHz) && std::fabs(carrierOffsetHintHz) > 1.0) {
         demod.setInitialCarrierOffset(static_cast<float>(2.0 * 3.14159265358979323846 * carrierOffsetHintHz / fs));
-        demod.setCarrierSearch(static_cast<float>(carrierOffsetHintHz), 50000.0f);
+        demod.setCarrierSearch(static_cast<float>(carrierOffsetHintHz), 5000.0f);
     }
     demod.configure(static_cast<float>(fs), 3.0e6f, v.alpha, v.carrierBw, v.timingBw);
     demod.setDcBlock(dcBlock);

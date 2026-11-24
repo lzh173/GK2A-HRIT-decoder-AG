@@ -440,7 +440,7 @@ double PskDemod::clampFreq(double freq) const {
         const double center = 2.0 * 3.141592653589793238462643383279502884 *
                               static_cast<double>(carrierSearchCenterHz_) / static_cast<double>(rate_);
         const double half = 2.0 * 3.141592653589793238462643383279502884 *
-                            (static_cast<double>(carrierSearchHalfWidthHz_) + 20000.0) / static_cast<double>(rate_);
+                            static_cast<double>(carrierSearchHalfWidthHz_) / static_cast<double>(rate_);
         return std::clamp(freq, center - half, center + half);
     }
     return std::clamp(clampCarrierOffset(freq, rate_), -nyquist, nyquist);
@@ -992,7 +992,7 @@ double QpskDemod::clampFreq(double freq) const {
         const double center = 2.0 * 3.141592653589793238462643383279502884 *
                               static_cast<double>(carrierSearchCenterHz_) / static_cast<double>(rate_);
         const double half = 2.0 * 3.141592653589793238462643383279502884 *
-                            (static_cast<double>(carrierSearchHalfWidthHz_) + 20000.0) / static_cast<double>(rate_);
+                            static_cast<double>(carrierSearchHalfWidthHz_) / static_cast<double>(rate_);
         return std::clamp(freq, center - half, center + half);
     }
     return std::clamp(clampCarrierOffset(freq, rate_), -nyquist, nyquist);

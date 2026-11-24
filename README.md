@@ -1,4 +1,4 @@
-# NadirStation GK-2A HRIT Decoder 1.6.0
+# NadirStation GK-2A HRIT Decoder 1.6.1
 
 Offline decoder for the GK-2A (GEO-KOMPSAT-2A) HRIT downlink. It reads a baseband IQ recording or a
 live USB stream from a HackRF / RTL-SDR, demodulates the 3 Msym/s QPSK signal, corrects errors
@@ -107,7 +107,7 @@ Developer: AGcov (BI2QYN)
   or the loop hundreds of kHz away. If a recording really is offset by more than that, correct the
   centre frequency first.
 - Optional **starting carrier offset**: leave it at 0 for the automatic ±250 kHz search, or enter the
-  known offset (kHz). A non-zero value seeds the NCO and restricts acquisition to ±50 kHz around it,
+  known offset (kHz). A non-zero value seeds the NCO and restricts acquisition and tracking to ±5 kHz around it,
   and may exceed the automatic cap. It is also used by the repair pass and live reception.
 - Soft-decision Viterbi (CCSDS K=7, r=1/2) and RS(255,223) with iterative feedback of corrected bytes.
 - CADU framing, M_PDU/CCSDS packets, LRIT file assembly that tolerates lost packets: a lost packet zero-fills that spot instead of discarding the whole segment.
@@ -206,7 +206,7 @@ For live reception choose the source in the window, set 1695.4 MHz and a rate of
 statistics and images are the same as for a recording.
 
 If you already know a recording's carrier offset, enter it in **起始频偏** (kHz). Zero keeps the
-automatic search; a non-zero value starts there and only searches ±50 kHz around it, which is also the
+automatic search; a non-zero value starts there and only searches and locks within ±5 kHz of it, which is also the
 way to bypass a false lock on an interfering unmodulated carrier. The value can be outside the
 automatic ±250 kHz limit.
 

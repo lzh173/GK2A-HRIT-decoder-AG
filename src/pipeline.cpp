@@ -22,7 +22,7 @@ bool HritPipeline::configure(double sampleRate, std::string& error, bool dcBlock
     sampleRate_ = sampleRate;
     const bool hinted = std::isfinite(carrierOffsetHintHz) && std::fabs(carrierOffsetHintHz) > 1.0;
     if (hinted) {
-        constexpr float kHintHalfWidthHz = 50000.0f;
+        constexpr float kHintHalfWidthHz = 5000.0f;
         demod_.setInitialCarrierOffset(static_cast<float>(2.0 * 3.14159265358979323846 * carrierOffsetHintHz / sampleRate));
         demod_.setCarrierSearch(static_cast<float>(carrierOffsetHintHz), kHintHalfWidthHz);
     } else {

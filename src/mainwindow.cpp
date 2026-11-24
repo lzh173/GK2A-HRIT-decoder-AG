@@ -327,7 +327,7 @@ void MainWindow::buildUi() {
     leftLayout->addWidget(dcBlock_);
 
     auto* carrierRow = new QHBoxLayout;
-    auto* carrierLabel = new QLabel(QStringLiteral("起始频偏"));
+    auto* carrierLabel = new QLabel(QStringLiteral("起始频偏（锁定 ±5 kHz）"));
     carrierHint_ = new QDoubleSpinBox;
     carrierHint_->setRange(-1500.0, 1500.0);
     carrierHint_->setDecimals(1);
@@ -335,7 +335,7 @@ void MainWindow::buildUi() {
     carrierHint_->setSuffix(QStringLiteral(" kHz"));
     carrierHint_->setValue(0.0);
     carrierHint_->setToolTip(QStringLiteral("0 = 自动搜索（±250 kHz）。\n"
-                                            "非 0 = 从这个频偏开始，只在该值 ±50 kHz 内搜索；用于已知频偏的录音，"
+                                            "非 0 = 从这个频偏开始，只在该值 ±5 kHz 内搜索并锁定；用于已知频偏的录音，"
                                             "或自动搜索被干扰空载波带偏时。可以超过自动的 ±250 kHz 上限。"));
     carrierRow->addWidget(carrierLabel);
     carrierRow->addWidget(carrierHint_, 1);
