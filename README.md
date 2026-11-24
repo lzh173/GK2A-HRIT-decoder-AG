@@ -1,4 +1,4 @@
-# NadirStation GK-2A HRIT Decoder 1.3.0
+# NadirStation GK-2A HRIT Decoder 1.4.0
 
 Offline decoder for the GK-2A (GEO-KOMPSAT-2A) HRIT downlink. It reads a baseband IQ recording or a
 live USB stream from a HackRF / RTL-SDR, demodulates the 3 Msym/s QPSK signal, corrects errors
@@ -59,11 +59,18 @@ with a CI debug key so it can be side-loaded directly:
 
 1. download the `NadirStation-GK2A-HRIT-decoder-android-arm64` artifact from the Actions run;
 2. allow installation from unknown sources and open the APK;
-3. choose a recording, set the output/key options, and start.
+3. choose a recording, or select HackRF / RTL-SDR, set the output/key options, and start.
 
-The Android version is **file-based only for now**: the desktop HackRF/RTL-SDR USB path needs Android
-USB-host permissions and a `libusb`/SDR packaging layer, which is not part of this APK. The decoder core,
-LRIT/HRIT assembly, images and L2 products are the same as on Windows.
+HackRF and RTL-SDR work over Android USB host (OTG). The APK bundles `libhrit_sdr_android.so`, built from
+a libusb fork that talks to Android's `UsbManager` through JNI, plus upstream libhackrf and librtlsdr.
+The first time a source is selected, Android asks for USB permission; allow it and press refresh/start
+again if the device list was empty. No root is needed. A powered OTG adapter/hub is recommended: the
+phone must power the SDR, and 6 MS/s on a HackRF can exceed a weak port's current budget. At 1695.4 MHz
+an external LNA/band-pass filter is still the biggest improvement. The Android version remains
+receive-only.
+
+The decoder core, LRIT/HRIT assembly, images and L2 products are the same as on Windows. The Android
+window uses two tabs ("解码" and "状态") and a scrollable layout on small screens.
 
 Android's document picker returns a `content://` URI, so the selected recording is copied once into the
 app cache before decoding. This needs free space equal to the recording size. Choose the output
@@ -71,7 +78,9 @@ directory with the system folder picker (Storage Access Framework); the decoder 
 app-private staging area and, when it finishes, copies the complete result tree into the directory you
 selected. The grant is persisted, and the directory name is shown in the window. If Android cannot write
 there (revoked grant, full storage), the summary says so and the staging copy remains available.
-The window switches to two tabs ("解码" and "状态") and a scrollable layout on small screens.
+
+The SDR libraries are built from source during the Android CI run (`FetchContent` in `CMakeLists.txt`);
+the APK ships the resulting `.so` and an `assets/SDR_NOTICE.txt` with source links and licences.
 
 Build locally (optional, requires Qt for Android, JDK 17, Android SDK 34/NDK r26b):
 

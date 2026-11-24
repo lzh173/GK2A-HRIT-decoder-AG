@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(NadirStation_GK2A_HRIT_Decoder VERSION 1.3.0 LANGUAGES C CXX)
+project(NadirStation_GK2A_HRIT_Decoder VERSION 1.4.0 LANGUAGES C CXX)
 
 # MinGW Makefiles are single-configuration generators: default to Release so the per-sample DSP is optimised.
 if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
@@ -257,7 +257,7 @@ if(HRIT_BUILD_GUI)
             QT_ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android"
             QT_ANDROID_MIN_SDK_VERSION 28
             QT_ANDROID_TARGET_SDK_VERSION 34
-            QT_ANDROID_VERSION_CODE 10300
+            QT_ANDROID_VERSION_CODE 10400
             QT_ANDROID_VERSION_NAME "${PROJECT_VERSION}"
             QT_ANDROID_EXTRA_LIBS "${CMAKE_BINARY_DIR}/android-libs/libhrit_sdr_android.so")
     endif()

@@ -203,11 +203,7 @@ void MainWindow::buildUi() {
 
     auto* title = new QLabel(QStringLiteral("GK-2A HRIT 解码器"));
     title->setObjectName(QStringLiteral("AppTitle"));
-#ifdef Q_OS_ANDROID
     auto* subtitle = new QLabel(QStringLiteral("解码基带录音或 HackRF / RTL-SDR 实时流 → LRIT 文件 → 云图与 L2 产品"));
-#else
-    auto* subtitle = new QLabel(QStringLiteral("解码基带录音或 HackRF / RTL-SDR 实时流 → LRIT 文件 → 云图与 L2 产品"));
-#endif
     subtitle->setObjectName(QStringLiteral("Muted"));
     subtitle->setWordWrap(true);
     leftLayout->addWidget(title);
@@ -573,6 +569,10 @@ void MainWindow::refreshDevices() {
         liveHint_->setText(liveHint_->text().section(QLatin1Char('\n'), 0, 0) +
                            QStringLiteral("\n找到 %1 个设备。").arg(devices.size()));
     }
+#ifdef Q_OS_ANDROID
+    liveHint_->setText(liveHint_->text() +
+                       QStringLiteral("\n首次使用请在系统弹窗中允许 USB 权限，然后再点一次“刷新”。"));
+#endif
 }
 
 hritapp::SdrConfig MainWindow::liveConfig() const {

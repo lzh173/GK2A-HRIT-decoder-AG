@@ -1,0 +1,19 @@
+NadirStation GK-2A HRIT Decoder - Android SDR components
+=========================================================
+
+This APK contains libhrit_sdr_android.so, built from:
+  - libusb Android-Dependencies fork (LGPL-2.1), https://github.com/SatDump/Android-Dependencies
+  - libhackrf (GPL-2.0), https://github.com/greatscottgadgets/hackrf
+  - librtlsdr (GPL-2.0), https://github.com/osmocom/rtl-sdr
+
+The Android-Dependencies fork only provides a JNI backend so libusb can enumerate and open USB
+devices through Android's UsbManager. libhackrf and librtlsdr are upstream sources. The exact
+commits and build flags are in CMakeLists.txt and .github/workflows/android-build.yml.
+
+The full GPL-2.0 and LGPL-2.1 texts are in assets/licenses/. The corresponding source code is
+available at the URLs above and from the project repository that produced this APK.
+
+The Android application also contains Qt for Android (LGPL-3.0, dynamically linked),
+AndroidX Core and Kotlin coroutines (Apache-2.0), and the LLVM libc++ runtime
+(Apache-2.0 with the LLVM exception). See the Qt and AndroidX upstream distributions for their
+notices. This APK is signed with a throw-away CI debug key, not a distribution key.
