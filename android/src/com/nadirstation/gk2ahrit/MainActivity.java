@@ -1,9 +1,16 @@
 package com.nadirstation.gk2ahrit;
 
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
 import android.content.ContentResolver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.database.Cursor;
+import android.hardware.usb.UsbDevice;
+import android.hardware.usb.UsbManager;
 import android.net.Uri;
+import android.os.Build;
 import android.provider.DocumentsContract;
 
 import org.qtproject.qt.android.bindings.QtActivity;
@@ -20,8 +27,55 @@ import java.util.Locale;
  */
 public class MainActivity extends QtActivity {
     private static final int REQ_OUTPUT_TREE = 0x4e21;
+    private static final String USB_PERMISSION = "com.nadirstation.gk2ahrit.USB_PERMISSION";
 
     private static native void nativeTreeSelected(String uri, int flags);
+
+    private boolean usbReceiverRegistered = false;
+    private final BroadcastReceiver usbReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            // Permission dialogs update UsbManager's per-device grant; the next refresh/open sees it.
+        }
+    };
+
+    public void requestSdrPermissions() {
+        UsbManager manager = (UsbManager) getSystemService(Context.USB_SERVICE);
+        if (manager == null) return;
+        if (!usbReceiverRegistered) {
+            IntentFilter filter = new IntentFilter(USB_PERMISSION);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(usbReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+            } else {
+                registerReceiver(usbReceiver, filter);
+            }
+            usbReceiverRegistered = true;
+        }
+        Intent intent = new Intent(USB_PERMISSION);
+        PendingIntent pending = PendingIntent.getBroadcast(this, 0, intent, PendingIntent.FLAG_IMMUTABLE);
+        for (UsbDevice device : manager.getDeviceList().values()) {
+            if (isSdr(device) && !manager.hasPermission(device)) {
+                manager.requestPermission(device, pending);
+            }
+        }
+    }
+
+    private boolean isSdr(UsbDevice device) {
+        int vid = device.getVendorId();
+        int pid = device.getProductId();
+        if (vid == 0x1d50 && (pid == 0x604b || pid == 0x6089 || pid == 0xcc15)) return true;
+        if (vid == 0x0bda && (pid == 0x2832 || pid == 0x2838)) return true;
+        return vid == 0x0413 && (pid == 0x6680 || pid == 0x6f0f);
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (usbReceiverRegistered) {
+            unregisterReceiver(usbReceiver);
+            usbReceiverRegistered = false;
+        }
+        super.onDestroy();
+    }
 
     public void pickOutputTree() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);

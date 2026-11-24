@@ -50,6 +50,11 @@
 #include <QVBoxLayout>
 #include <algorithm>
 
+#ifdef Q_OS_ANDROID
+#include <QJniEnvironment>
+#include <QJniObject>
+#endif
+
 namespace {
 
 bool isSupportedRecording(const QString& path) {
@@ -199,7 +204,7 @@ void MainWindow::buildUi() {
     auto* title = new QLabel(QStringLiteral("GK-2A HRIT 解码器"));
     title->setObjectName(QStringLiteral("AppTitle"));
 #ifdef Q_OS_ANDROID
-    auto* subtitle = new QLabel(QStringLiteral("解码基带录音 → LRIT 文件 → 云图与 L2 产品"));
+    auto* subtitle = new QLabel(QStringLiteral("解码基带录音或 HackRF / RTL-SDR 实时流 → LRIT 文件 → 云图与 L2 产品"));
 #else
     auto* subtitle = new QLabel(QStringLiteral("解码基带录音或 HackRF / RTL-SDR 实时流 → LRIT 文件 → 云图与 L2 产品"));
 #endif
@@ -212,10 +217,8 @@ void MainWindow::buildUi() {
     auto* sourceLayout = new QVBoxLayout(sourceBox);
     sourceCombo_ = new QComboBox;
     sourceCombo_->addItem(QStringLiteral("文件录音"));
-#ifndef Q_OS_ANDROID
     sourceCombo_->addItem(QStringLiteral("HackRF（USB 实时）"));
     sourceCombo_->addItem(QStringLiteral("RTL-SDR（USB 实时）"));
-#endif
     sourceLayout->addWidget(sourceCombo_);
     leftLayout->addWidget(sourceBox);
 
@@ -542,6 +545,13 @@ void MainWindow::onSourceChanged(int index) {
 
 void MainWindow::refreshDevices() {
     if (!liveMode_) return;
+#ifdef Q_OS_ANDROID
+    // libusb's Android backend needs the JavaVM before the first libusb_init. Ask the user for USB
+    // permission for known SDR VID/PIDs at the same time; the system dialog is asynchronous.
+    hritapp::SdrSource::setAndroidJavaVm(QJniEnvironment::javaVM());
+    QJniObject activity = QNativeInterface::QAndroidApplication::context();
+    if (activity.isValid()) activity.callMethod<void>("requestSdrPermissions", "()V");
+#endif
     const hritapp::SdrKind kind =
         sourceCombo_->currentIndex() == 1 ? hritapp::SdrKind::HackRf : hritapp::SdrKind::RtlSdr;
     deviceCombo_->clear();
@@ -713,6 +723,13 @@ void MainWindow::toggleRun() {
         }
         return;
     }
+#ifdef Q_OS_ANDROID
+    if (!hritapp::AndroidOutput::instance().hasTreeUri()) {
+        QMessageBox::information(this, QStringLiteral("还没有选择输出目录"),
+                                 QStringLiteral("请先在“输出文件夹”里选择一个手机上的目录；结果会自动导出到那里。"));
+        return;
+    }
+#endif
     if (liveMode_) {
         if (deviceCombo_->currentIndex() < 0 || deviceCombo_->currentText().startsWith(QStringLiteral("未找到"))) {
             QMessageBox::information(this, QStringLiteral("没有找到 SDR"),
@@ -771,13 +788,6 @@ void MainWindow::toggleRun() {
         QMessageBox::warning(this, QStringLiteral("录音不能用"), inputInfo_->text());
         return;
     }
-#ifdef Q_OS_ANDROID
-    if (!hritapp::AndroidOutput::instance().hasTreeUri()) {
-        QMessageBox::information(this, QStringLiteral("还没有选择输出目录"),
-                                 QStringLiteral("请先在“输出文件夹”里选择一个手机上的目录；解码完成后结果会自动导出到那里。"));
-        return;
-    }
-#endif
     const QString out = outputRoot();
 #ifndef Q_OS_ANDROID
     outputEdit_->setText(QDir::toNativeSeparators(out));

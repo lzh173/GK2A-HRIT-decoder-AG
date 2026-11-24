@@ -170,6 +170,56 @@ if(HRIT_BUILD_GUI)
     add_dependencies(nadir_turbojpeg nadir_jpeg_build)
     set(HRIT_TURBOJPEG_TARGET nadir_turbojpeg)
 
+    if(ANDROID)
+        # Android has no /dev/bus/usb access. This libusb fork uses the Java UsbManager through JNI
+        # (the approach used by Android SDR applications); libhackrf/librtlsdr stay upstream.
+        include(FetchContent)
+        FetchContent_Declare(libusb_android
+            URL https://codeload.github.com/SatDump/Android-Dependencies/tar.gz/4b1f699db2e829fa6ee8070fac001b784b111916
+            DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+        FetchContent_Declare(hackrf_android
+            URL https://codeload.github.com/greatscottgadgets/hackrf/tar.gz/5f0a963c3d8c866f089bbdf07e05d589b6b461dc
+            DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+        FetchContent_Declare(rtlsdr_android
+            URL https://codeload.github.com/osmocom/rtl-sdr/tar.gz/797f8143266d983c56d8f35d2d442527529dd8a5
+            DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+        FetchContent_GetProperties(libusb_android)
+        if(NOT libusb_android_POPULATED)
+            FetchContent_Populate(libusb_android)
+        endif()
+        FetchContent_GetProperties(hackrf_android)
+        if(NOT hackrf_android_POPULATED)
+            FetchContent_Populate(hackrf_android)
+        endif()
+        FetchContent_GetProperties(rtlsdr_android)
+        if(NOT rtlsdr_android_POPULATED)
+            FetchContent_Populate(rtlsdr_android)
+        endif()
+
+        set(_libusb_dir "${libusb_android_SOURCE_DIR}/libusb")
+        set(_hackrf_dir "${hackrf_android_SOURCE_DIR}/host/libhackrf/src")
+        set(_rtlsdr_dir "${rtlsdr_android_SOURCE_DIR}")
+        file(GLOB_RECURSE _libusb_sources "${_libusb_dir}/*.c")
+        add_library(hrit_sdr_android SHARED
+            ${_libusb_sources}
+            "${_hackrf_dir}/hackrf.c"
+            "${_rtlsdr_dir}/src/librtlsdr.c"
+            "${_rtlsdr_dir}/src/tuner_e4k.c"
+            "${_rtlsdr_dir}/src/tuner_fc0012.c"
+            "${_rtlsdr_dir}/src/tuner_fc0013.c"
+            "${_rtlsdr_dir}/src/tuner_fc2580.c"
+            "${_rtlsdr_dir}/src/tuner_r82xx.c")
+        target_include_directories(hrit_sdr_android PRIVATE
+            "${_libusb_dir}" "${_libusb_dir}/os"
+            "${_hackrf_dir}"
+            "${_rtlsdr_dir}/include" "${_rtlsdr_dir}/src")
+        target_compile_definitions(hrit_sdr_android PRIVATE HAVE_CONFIG_H=1)
+        target_link_libraries(hrit_sdr_android PRIVATE log m)
+        set_target_properties(hrit_sdr_android PROPERTIES
+            C_VISIBILITY_PRESET default
+            LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/android-libs")
+    endif()
+
     # ---- HRIT image library (JPEG2000 / JPEG segments -> pictures, DES decryption) -------------------------------
     add_library(hrit_images STATIC src/gk2ahritimages.cpp src/des.cpp)
     target_include_directories(hrit_images PUBLIC src PRIVATE
@@ -206,7 +256,8 @@ if(HRIT_BUILD_GUI)
             QT_ANDROID_MIN_SDK_VERSION 28
             QT_ANDROID_TARGET_SDK_VERSION 34
             QT_ANDROID_VERSION_CODE 10300
-            QT_ANDROID_VERSION_NAME "${PROJECT_VERSION}")
+            QT_ANDROID_VERSION_NAME "${PROJECT_VERSION}"
+            QT_ANDROID_EXTRA_LIBS "${CMAKE_BINARY_DIR}/android-libs/libhrit_sdr_android.so")
     endif()
 
     # The coastline overlay reads these two files next to the program.

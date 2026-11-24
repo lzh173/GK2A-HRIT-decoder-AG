@@ -117,6 +117,8 @@ private:
 std::vector<std::string> hackrfLibraryNames() {
 #ifdef _WIN32
     return {"hackrf.dll", "libhackrf.dll"};
+#elif defined(__ANDROID__)
+    return {"libhrit_sdr_android.so"};
 #else
     return {"libhackrf.so.0", "libhackrf.so"};
 #endif
@@ -125,8 +127,22 @@ std::vector<std::string> hackrfLibraryNames() {
 std::vector<std::string> rtlsdrLibraryNames() {
 #ifdef _WIN32
     return {"rtlsdr.dll", "librtlsdr.dll"};
+#elif defined(__ANDROID__)
+    return {"libhrit_sdr_android.so"};
 #else
     return {"librtlsdr.so.0", "librtlsdr.so"};
+#endif
+}
+
+void* androidJavaVm = nullptr;
+
+void configureLibusb(DynamicLibrary& lib) {
+#ifdef __ANDROID__
+    if (!androidJavaVm) return;
+    auto setOption = reinterpret_cast<int (*)(void*, int, ...)>(lib.symbol("libusb_set_option"));
+    if (setOption) setOption(nullptr, 5 /* LIBUSB_OPTION_ANDROID_JAVAVM */, androidJavaVm);
+#else
+    (void)lib;
 #endif
 }
 
@@ -426,6 +442,7 @@ bool SdrSource::Impl::bindHackRf(std::string& error) {
 
 bool SdrSource::Impl::openHackRf(std::string& error) {
     if (!lib_.open(hackrfLibraryNames(), error)) return false;
+    configureLibusb(lib_);
     if (!bindHackRf(error)) return false;
     hackrfOpenBySerial_ =
         reinterpret_cast<hackrf_open_by_serial_fn>(lib_.symbol("hackrf_open_by_serial"));
@@ -507,6 +524,7 @@ bool SdrSource::Impl::bindRtlSdr(std::string& error) {
 
 bool SdrSource::Impl::openRtlSdr(std::string& error) {
     if (!lib_.open(rtlsdrLibraryNames(), error)) return false;
+    configureLibusb(lib_);
     if (!bindRtlSdr(error)) return false;
     rtlGetDeviceUsbStrings_ = reinterpret_cast<rtlsdr_get_device_usb_strings_fn>(
         lib_.symbol("rtlsdr_get_device_usb_strings"));
@@ -670,12 +688,15 @@ std::size_t SdrSource::read(std::vector<std::complex<float>>& out, std::size_t m
 }
 void SdrSource::requestStop() { impl_->requestStop(); }
 
+void SdrSource::setAndroidJavaVm(void* vm) { androidJavaVm = vm; }
+
 std::vector<SdrDeviceInfo> SdrSource::enumerate(SdrKind kind, std::string& error) {
     error.clear();
     std::vector<SdrDeviceInfo> devices;
     DynamicLibrary lib;
     if (kind == SdrKind::HackRf) {
         if (!lib.open(hackrfLibraryNames(), error)) return devices;
+        configureLibusb(lib);
         auto initFn = reinterpret_cast<hackrf_init_fn>(lib.symbol("hackrf_init"));
         auto exitFn = reinterpret_cast<hackrf_exit_fn>(lib.symbol("hackrf_exit"));
         auto listFn = reinterpret_cast<hackrf_device_list_fn>(lib.symbol("hackrf_device_list"));
@@ -709,6 +730,7 @@ std::vector<SdrDeviceInfo> SdrSource::enumerate(SdrKind kind, std::string& error
     }
 
     if (!lib.open(rtlsdrLibraryNames(), error)) return devices;
+    configureLibusb(lib);
     auto countFn = reinterpret_cast<rtlsdr_get_device_count_fn>(lib.symbol("rtlsdr_get_device_count"));
     auto nameFn = reinterpret_cast<rtlsdr_get_device_name_fn>(lib.symbol("rtlsdr_get_device_name"));
     auto usbFn = reinterpret_cast<rtlsdr_get_device_usb_strings_fn>(

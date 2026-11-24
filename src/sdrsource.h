@@ -87,6 +87,10 @@ public:
     // when the library or the driver is not installed.
     static std::vector<SdrDeviceInfo> enumerate(SdrKind kind, std::string& error);
 
+    // Android only: pass the JavaVM before enumeration/open so libusb can use UsbManager through JNI.
+    // A null pointer is ignored. On other platforms this is a no-op.
+    static void setAndroidJavaVm(void* vm);
+
     bool open(const SdrConfig& config, std::string& error);
     void close();
     bool isOpen() const;
