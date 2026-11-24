@@ -200,6 +200,7 @@ if(HRIT_BUILD_GUI)
         set(_hackrf_dir "${hackrf_android_SOURCE_DIR}/host/libhackrf/src")
         set(_rtlsdr_dir "${rtlsdr_android_SOURCE_DIR}")
         file(GLOB_RECURSE _libusb_sources "${_libusb_dir}/*.c")
+        list(FILTER _libusb_sources EXCLUDE REGEX "/null_usb\\.c$")
         add_library(hrit_sdr_android SHARED
             ${_libusb_sources}
             "${_hackrf_dir}/hackrf.c"
