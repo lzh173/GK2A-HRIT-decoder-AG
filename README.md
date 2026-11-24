@@ -1,4 +1,4 @@
-# NadirStation GK-2A HRIT Decoder 1.5.0
+# NadirStation GK-2A HRIT Decoder 1.6.0
 
 Offline decoder for the GK-2A (GEO-KOMPSAT-2A) HRIT downlink. It reads a baseband IQ recording or a
 live USB stream from a HackRF / RTL-SDR, demodulates the 3 Msym/s QPSK signal, corrects errors
@@ -209,6 +209,22 @@ If you already know a recording's carrier offset, enter it in **起始频偏** (
 automatic search; a non-zero value starts there and only searches ±50 kHz around it, which is also the
 way to bypass a false lock on an interfering unmodulated carrier. The value can be outside the
 automatic ±250 kHz limit.
+
+## Raw HRIT files and CADU output
+
+The window has two output options shared by file and live decoding:
+
+- **保存原始 HRIT 文件** (on by default): every reassembled file is written byte-for-byte to
+  `<output>/LRIT/<original-name>.hrit`, the same raw-file layout used by other HRIT decoders. This is
+  useful if you want to process the LRIT/HRIT files with another tool instead of the built-in images.
+- **保存 CADU 帧** (off by default): every 1024-byte CADU that carried the `1ACFFC1D` sync marker is
+  appended to `<output>/CADU/<UTC timestamp>.cadu`, including frames whose Reed-Solomon check failed.
+  This is the raw stream for an external decoder or for analysis. A full-rate HRIT downlink is roughly
+  180 frames/s, about 180 KB/s, so the file grows quickly; enable it only when needed.
+
+Both are copied to the chosen SAF directory on Android as part of the normal output tree. The CADU file
+is opened at the start of a run and closed when the run ends.
+
 
 ## Licence
 

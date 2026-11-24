@@ -155,6 +155,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     rateSpin_->setValue(settings.value(QStringLiteral("manualRateMsps"), 6.0).toDouble());
     dcBlock_->setChecked(settings.value(QStringLiteral("dcBlock"), true).toBool());
     carrierHint_->setValue(settings.value(QStringLiteral("carrierHintKHz"), 0.0).toDouble());
+    saveHritFiles_->setChecked(settings.value(QStringLiteral("saveHritFiles"), true).toBool());
+    saveCadu_->setChecked(settings.value(QStringLiteral("saveCadu"), false).toBool());
 
     const int source = std::clamp(settings.value(QStringLiteral("source"), 0).toInt(), 0, 2);
     {
@@ -338,6 +340,17 @@ void MainWindow::buildUi() {
     carrierRow->addWidget(carrierLabel);
     carrierRow->addWidget(carrierHint_, 1);
     leftLayout->addLayout(carrierRow);
+
+    saveHritFiles_ = new QCheckBox(QStringLiteral("保存原始 HRIT 文件"));
+    saveHritFiles_->setChecked(true);
+    saveHritFiles_->setToolTip(QStringLiteral("在输出目录的 LRIT/ 下保存重组后的原始 .hrit 文件（与常见 HRIT 解码器一致），"
+                                              "而不只是生成图片。"));
+    leftLayout->addWidget(saveHritFiles_);
+    saveCadu_ = new QCheckBox(QStringLiteral("保存 CADU 帧（1024 字节/帧）"));
+    saveCadu_->setChecked(false);
+    saveCadu_->setToolTip(QStringLiteral("把每个带同步字的 1024 字节 CADU 追加写入输出目录的 CADU/*.cadu，"
+                                         "便于外部解码或分析。文件会比较大。"));
+    leftLayout->addWidget(saveCadu_);
 
     auto* outBox = new QGroupBox(QStringLiteral("3  输出文件夹"));
     auto* outLayout = new QVBoxLayout(outBox);
@@ -770,6 +783,8 @@ void MainWindow::toggleRun() {
         settings.setValue(QStringLiteral("source"), sourceCombo_->currentIndex());
         settings.setValue(QStringLiteral("dcBlock"), dcBlock_->isChecked());
     settings.setValue(QStringLiteral("carrierHintKHz"), carrierHint_->value());
+    settings.setValue(QStringLiteral("saveHritFiles"), saveHritFiles_->isChecked());
+    settings.setValue(QStringLiteral("saveCadu"), saveCadu_->isChecked());
         settings.setValue(QStringLiteral("liveFreqMHz"), liveFreq_->value());
         settings.setValue(QStringLiteral("liveRateMsps"), liveRate_->value());
         settings.setValue(QStringLiteral("liveGainDb"), liveGain_->value());
@@ -791,7 +806,7 @@ void MainWindow::toggleRun() {
         onStats(hritapp::PipelineStats{});
         setRunning(true);
         emit startLiveRequested(config, out, keyEdit_->text().trimmed(), dcBlock_->isChecked(),
-                                carrierHint_->value() * 1000.0);
+                                carrierHint_->value() * 1000.0, saveHritFiles_->isChecked(), saveCadu_->isChecked());
         return;
     }
 
@@ -820,6 +835,8 @@ void MainWindow::toggleRun() {
     settings.setValue(QStringLiteral("manualRateMsps"), rateSpin_->value());
     settings.setValue(QStringLiteral("dcBlock"), dcBlock_->isChecked());
     settings.setValue(QStringLiteral("carrierHintKHz"), carrierHint_->value());
+    settings.setValue(QStringLiteral("saveHritFiles"), saveHritFiles_->isChecked());
+    settings.setValue(QStringLiteral("saveCadu"), saveCadu_->isChecked());
     settings.setValue(QStringLiteral("source"), sourceCombo_->currentIndex());
 
     log_->clear();
@@ -833,7 +850,8 @@ void MainWindow::toggleRun() {
     onStats(hritapp::PipelineStats{});
     setRunning(true);
     emit startRequested(path, rateSpin_->value() * 1e6, manualRate_->isChecked(), out, keyEdit_->text().trimmed(),
-                        dcBlock_->isChecked(), carrierHint_->value() * 1000.0);
+                        dcBlock_->isChecked(), carrierHint_->value() * 1000.0, saveHritFiles_->isChecked(),
+                        saveCadu_->isChecked());
 }
 
 void MainWindow::setRunning(bool running) {
@@ -988,6 +1006,8 @@ void MainWindow::closeEvent(QCloseEvent* event) {
     settings.setValue(QStringLiteral("manualRateMsps"), rateSpin_->value());
     settings.setValue(QStringLiteral("dcBlock"), dcBlock_->isChecked());
     settings.setValue(QStringLiteral("carrierHintKHz"), carrierHint_->value());
+    settings.setValue(QStringLiteral("saveHritFiles"), saveHritFiles_->isChecked());
+    settings.setValue(QStringLiteral("saveCadu"), saveCadu_->isChecked());
     settings.setValue(QStringLiteral("source"), sourceCombo_->currentIndex());
     settings.setValue(QStringLiteral("liveFreqMHz"), liveFreq_->value());
     settings.setValue(QStringLiteral("liveRateMsps"), liveRate_->value());

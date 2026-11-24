@@ -21,7 +21,7 @@ public:
 
 public slots:
     void run(const hritapp::SdrConfig& config, const QString& outputDir, const QString& keyPath, bool dcBlock,
-             double carrierOffsetHintHz);
+             double carrierOffsetHintHz, bool saveHritFiles, bool saveCadu);
 
 signals:
     void inputInfo(const QString& description, double sampleRate);

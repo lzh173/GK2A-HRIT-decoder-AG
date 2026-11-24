@@ -5,6 +5,7 @@
 #include "gk2ahritimages.h"
 #include "iqreader.h"
 #include "qtpath.h"
+#include "recordsaver.h"
 #include "repair.h"
 
 #include <QDir>
@@ -17,7 +18,8 @@
 #include <string>
 
 void DecodeWorker::run(const QString& inputPath, double manualRateHz, bool preferManual, const QString& outputDir,
-                       const QString& keyPath, bool dcBlock, double carrierOffsetHintHz) {
+                       const QString& keyPath, bool dcBlock, double carrierOffsetHintHz, bool saveHritFiles,
+                       bool saveCadu) {
     using clock = std::chrono::steady_clock;
     stop_.store(false);
 
@@ -50,6 +52,11 @@ void DecodeWorker::run(const QString& inputPath, double manualRateHz, bool prefe
         emit finished(false, QStringLiteral("无法创建输出文件夹：%1").arg(outputDir));
         return;
     }
+    hritapp::RecordSaver saver(outputDir, saveHritFiles, saveCadu);
+    pipe.setCaduSink([&saver](const std::vector<std::uint8_t>& bytes) { saver.saveCadu(bytes); });
+    if (saveHritFiles) emit logLine(QStringLiteral("原始 HRIT 文件输出到：%1").arg(QDir(outputDir).filePath(QStringLiteral("LRIT"))));
+    if (saveCadu) emit logLine(QStringLiteral("CADU 输出到：%1").arg(saver.caduPath()));
+    if (!saver.lastError().isEmpty()) emit logLine(saver.lastError());
 
     nadirstation::gk2a::HritImages images;
     const QString key = hritapp::findKeyFile(keyPath, inputPath, outputDir);
@@ -92,6 +99,7 @@ void DecodeWorker::run(const QString& inputPath, double manualRateHz, bool prefe
     pipe.setCollectFrames(true);
     const std::function<void(nadirstation::gk2a::LritFile&&)> onFile = [&](nadirstation::gk2a::LritFile&& file) {
         if (file.bytes.size() > nadirstation::gk2a::LritFileAssembler::kMaxFileBytes) return;
+        saver.saveHrit(file);
         if (!file.holes.empty() || file.lostPackets > 0) damaged[file.fileName] = std::max<std::size_t>(file.lostPackets, 1);
         lastStamp = hritapp::observationStamp(file.fileName);
         for (int tries = 0; tries < 400 && !stop_.load(); ++tries) {
@@ -166,6 +174,15 @@ void DecodeWorker::run(const QString& inputPath, double manualRateHz, bool prefe
     images.requestFinalize();
     images.drain();
     publish();
+
+    saver.close();
+    if (saveHritFiles)
+        emit logLine(QStringLiteral("原始 HRIT 文件：%1 个，位于 %2")
+                         .arg(saver.hritFiles())
+                         .arg(QDir(outputDir).filePath(QStringLiteral("LRIT"))));
+    if (saveCadu)
+        emit logLine(QStringLiteral("CADU：%1 帧，%2").arg(saver.caduFrames()).arg(saver.caduPath()));
+    if (!saver.lastError().isEmpty()) emit logLine(saver.lastError());
 
     QString summary = QStringLiteral("%1：RS 通过 %2 / 同步 %3 · 数据包 %4 · 完成 %5 个文件 · 输出 %6 次观测")
                           .arg(stopped ? QStringLiteral("已停止") : QStringLiteral("解码完成"))

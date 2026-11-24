@@ -23,7 +23,7 @@ public:
 
 public slots:
     void run(const QString& inputPath, double manualRateHz, bool preferManual, const QString& outputDir,
-             const QString& keyPath, bool dcBlock, double carrierOffsetHintHz);
+             const QString& keyPath, bool dcBlock, double carrierOffsetHintHz, bool saveHritFiles, bool saveCadu);
 
 signals:
     void inputInfo(const QString& description, double sampleRate);

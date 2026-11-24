@@ -48,6 +48,11 @@ public:
     // the automatic full search (capped at +/-250 kHz).
     bool configure(double sampleRate, std::string& error, bool dcBlock = true, bool asyncLink = true,
                    double carrierOffsetHintHz = 0.0);
+    // Optional raw CADU tap. Called for every frame that carried the sync marker, before the
+    // Reed-Solomon check, so the stream is suitable for an external decoder. The bytes are the
+    // complete 1024-byte CADU (sync + transfer frame + RS check symbols).
+    void setCaduSink(std::function<void(const std::vector<std::uint8_t>&)> sink) { caduSink_ = std::move(sink); }
+    void clearCaduSink() { caduSink_ = nullptr; }
     void reset();
     // One block of IQ. Completed LRIT files are handed to onFile. Returns the symbols of this block (for the display).
     const std::vector<std::complex<float>>& process(const std::vector<std::complex<float>>& iq,
@@ -76,6 +81,7 @@ private:
     bool configured_ = false;
     bool collect_ = false;
     std::vector<std::vector<std::uint8_t>> collected_;
+    std::function<void(const std::vector<std::uint8_t>&)> caduSink_;
 };
 
 }  // namespace hritapp

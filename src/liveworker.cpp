@@ -3,6 +3,7 @@
 #include "androidoutput.h"
 #include "decodehelpers.h"
 #include "gk2ahritimages.h"
+#include "recordsaver.h"
 
 #include <QDir>
 #include <QThread>
@@ -14,7 +15,7 @@
 #include <vector>
 
 void LiveDecodeWorker::run(const hritapp::SdrConfig& config, const QString& outputDir, const QString& keyPath,
-                           bool dcBlock, double carrierOffsetHintHz) {
+                           bool dcBlock, double carrierOffsetHintHz, bool saveHritFiles, bool saveCadu) {
     using clock = std::chrono::steady_clock;
     stop_.store(false);
 
@@ -46,6 +47,11 @@ void LiveDecodeWorker::run(const hritapp::SdrConfig& config, const QString& outp
         emit finished(false, QString::fromUtf8(error.c_str()));
         return;
     }
+    hritapp::RecordSaver saver(outputDir, saveHritFiles, saveCadu);
+    pipe.setCaduSink([&saver](const std::vector<std::uint8_t>& bytes) { saver.saveCadu(bytes); });
+    if (saveHritFiles) emit logLine(QStringLiteral("原始 HRIT 文件输出到：%1").arg(QDir(outputDir).filePath(QStringLiteral("LRIT"))));
+    if (saveCadu) emit logLine(QStringLiteral("CADU 输出到：%1").arg(saver.caduPath()));
+    if (!saver.lastError().isEmpty()) emit logLine(saver.lastError());
 
     nadirstation::gk2a::HritImages images;
     const QString key = hritapp::findKeyFile(keyPath, QString(), outputDir);
@@ -95,6 +101,7 @@ void LiveDecodeWorker::run(const hritapp::SdrConfig& config, const QString& outp
     const std::function<void(nadirstation::gk2a::LritFile&&)> onFile =
         [&](nadirstation::gk2a::LritFile&& file) {
             if (file.bytes.size() > nadirstation::gk2a::LritFileAssembler::kMaxFileBytes) return;
+            saver.saveHrit(file);
             for (int tries = 0; tries < 400 && !stop_.load(); ++tries) {
                 if (images.queuedBytes() > (24u << 20)) {
                     QThread::msleep(25);
@@ -159,6 +166,15 @@ void LiveDecodeWorker::run(const hritapp::SdrConfig& config, const QString& outp
     images.requestFinalize();
     images.drain();
     publish();
+
+    saver.close();
+    if (saveHritFiles)
+        emit logLine(QStringLiteral("原始 HRIT 文件：%1 个，位于 %2")
+                         .arg(saver.hritFiles())
+                         .arg(QDir(outputDir).filePath(QStringLiteral("LRIT"))));
+    if (saveCadu)
+        emit logLine(QStringLiteral("CADU：%1 帧，%2").arg(saver.caduFrames()).arg(saver.caduPath()));
+    if (!saver.lastError().isEmpty()) emit logLine(saver.lastError());
 
     const auto stats = pipe.stats();
     const double seconds = std::chrono::duration<double>(clock::now() - started).count();

@@ -1,6 +1,6 @@
 NadirStation GK-2A HRIT 解码器 / NadirStation GK-2A HRIT Decoder
 用户协议与免责声明 / Terms of Use and Disclaimer
-版本 1.5.0 · 2026-11-24 · 开发者 / Developer: AGcov（BI2QYN）
+版本 1.6.0 · 2026-11-24 · 开发者 / Developer: AGcov（BI2QYN）
 
 ========================================================================
 

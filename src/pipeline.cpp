@@ -54,6 +54,7 @@ void HritPipeline::reset() {
 
 void HritPipeline::handleFrame(nadirstation::gk2a::Cadu&& frame,
                                const std::function<void(nadirstation::gk2a::LritFile&&)>& onFile) {
+    if (caduSink_) caduSink_(frame.bytes);
     if (!frame.rsOk) return;
     if (collect_) collected_.push_back(frame.bytes);
     for (auto& file : assembler_.feed(frame.bytes)) {
