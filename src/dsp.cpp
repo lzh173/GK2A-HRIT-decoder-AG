@@ -11,6 +11,16 @@
 namespace nadirstation::dsp {
 namespace {
 constexpr float PI = 3.14159265358979323846f;
+// A GEO L-band downlink has at most a few tens of kHz of LO/Doppler error. Allowing the
+// fourth-power search to roam over the whole Nyquist band lets a strong unmodulated carrier pull
+// the loop hundreds of kHz away; cap acquisition and tracking at a physically plausible offset.
+constexpr double kMaxCarrierOffsetHz = 250000.0;
+
+double clampCarrierOffset(double freq, double rate) {
+    if (!(rate > 0.0)) return 0.0;
+    const double limit = 2.0 * 3.141592653589793238462643383279502884 * kMaxCarrierOffsetHz / rate;
+    return std::clamp(freq, -limit, limit);
+}
 
 void fft(std::vector<std::complex<float>>& a) {
     // Twiddles from a table computed once per size in double precision. The previous recurrence
@@ -432,7 +442,7 @@ void PskDemod::reset() {
     aaPhase_ = 0;
     power_ = 1.0f;
     phase_ = 0.0;
-    freq_ = initialCarrierOffset_;
+    freq_ = clampCarrierOffset(initialCarrierOffset_, rate_);
     mfHist_.assign(2 * rrc_.size() + 4, {0, 0});
     mfPos_ = 0;
     buf_.clear();
@@ -464,11 +474,16 @@ void PskDemod::acquire() {
     }
     fftInPlace(a);
     std::size_t best = 0;
+    bool found = false;
     double bestPower = -1.0;
+    const double maxBin = kMaxCarrierOffsetHz * static_cast<double>(n) * (qpsk_ ? 4.0 : 2.0) / rate_;
     for (std::size_t k = 0; k < n; ++k) {
+        const double signedBin = k <= n / 2 ? static_cast<double>(k) : static_cast<double>(k) - static_cast<double>(n);
+        if (std::fabs(signedBin) > maxBin) continue;
         const double p = std::norm(a[k]);
-        if (p > bestPower) { bestPower = p; best = k; }
+        if (p > bestPower) { bestPower = p; best = k; found = true; }
     }
+    if (!found) best = 0;
     auto logPower = [&](std::size_t k) { return std::log(std::max(std::norm(a[k % n]), 1e-300)); };
     const double l = logPower(best + n - 1), c = logPower(best), r = logPower(best + 1);
     const double den = l - 2.0 * c + r;
@@ -476,7 +491,7 @@ void PskDemod::acquire() {
     double bin = static_cast<double>(best) + delta;
     if (bin > static_cast<double>(n) / 2.0) bin -= static_cast<double>(n);
     // Line at 2*offset, in cycles per sample -> offset in radians per sample.
-    freq_ = 2.0 * kPi * (bin / static_cast<double>(n)) / (qpsk_ ? 4.0 : 2.0);
+    freq_ = clampCarrierOffset(2.0 * kPi * (bin / static_cast<double>(n)) / (qpsk_ ? 4.0 : 2.0), rate_);
     phase_ = 0.0;
     // A carrier reacquisition often follows a signal fade. During the fade the timing loop
     // continues to see AGC-normalised noise, so its period, interpolator history and matched
@@ -790,7 +805,7 @@ void PskDemod::track(std::complex<float> z, DPSKResult& out) {
         const double phaseError = static_cast<double>(s.imag()) * (s.real() >= 0.f ? 1. : -1.)
             - (qpsk_ ? static_cast<double>(s.real()) * (s.imag() >= 0.f ? 1. : -1.) : 0.);
         const double ec = std::clamp(phaseError / ampAvg_, -1., 1.);
-        freq_ += cKi_ * ec / period_;
+        freq_ = clampCarrierOffset(freq_ + cKi_ * ec / period_, rate_);
         phase_ += cKp_ * ec;
         period_ = std::clamp(period_ + tKi_ * et, periodMin, periodMax);
         next_ += 0.5 * period_ + tKp_ * et * period_ * 0.5;
@@ -959,7 +974,7 @@ void QpskDemod::reset() {
     aaPhase_ = 0;
     power_ = 1.0f;
     phase_ = 0.0;
-    freq_ = initialCarrierOffset_;
+    freq_ = clampCarrierOffset(initialCarrierOffset_, rate_);
     ncoCount_ = 0;
     buf_.clear();
     base_ = 0.0;
@@ -987,18 +1002,23 @@ void QpskDemod::acquire() {
     // The 4th power of a DC spur is a line at 0; ignore the bins next to DC unless nothing else.
     fftInPlace(a);
     std::size_t best = 0;
+    bool found = false;
     double bestPower = -1.0;
+    const double maxBin = kMaxCarrierOffsetHz * static_cast<double>(n) * 4.0 / rate_;
     for (std::size_t k = 0; k < n; ++k) {
+        const double signedBin = k <= n / 2 ? static_cast<double>(k) : static_cast<double>(k) - static_cast<double>(n);
+        if (std::fabs(signedBin) > maxBin) continue;
         const double p = std::norm(a[k]);
-        if (p > bestPower) { bestPower = p; best = k; }
+        if (p > bestPower) { bestPower = p; best = k; found = true; }
     }
+    if (!found) best = 0;
     auto logPower = [&](std::size_t k) { return std::log(std::max(std::norm(a[k % n]), 1e-300)); };
     const double l = logPower(best + n - 1), c = logPower(best), r = logPower(best + 1);
     const double den = l - 2.0 * c + r;
     const double delta = std::fabs(den) > 1e-12 ? std::clamp(0.5 * (l - r) / den, -0.5, 0.5) : 0.0;
     double bin = static_cast<double>(best) + delta;
     if (bin > static_cast<double>(n) / 2.0) bin -= static_cast<double>(n);
-    freq_ = 2.0 * kPi * (bin / static_cast<double>(n)) / 4.0;
+    freq_ = clampCarrierOffset(2.0 * kPi * (bin / static_cast<double>(n)) / 4.0, rate_);
     phase_ = 0.0;
     buf_.clear();
     base_ = 0.0;
@@ -1128,7 +1148,7 @@ void QpskDemod::track(std::complex<float> z, DPSKResult& out) {
             // at the next resync.
             cErrAcc_ += ec * ec; ++cErrN_;
             const double df = cKi_ * ec / period_, dp = cKp_ * ec;
-            freq_ += df;
+            freq_ = clampCarrierOffset(freq_ + df, rate_);
             phase_ += dp;
             {
                 const double cs = 1.0 - 0.5 * df * df, sn = -df;

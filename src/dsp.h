@@ -80,6 +80,7 @@ public:
     int inputDecimation() const { return decim_; }
     int inputUpsampling() const { return up_; }
     float symbolRate() const { return symbolRate_; }
+    float carrierOffsetHz() const { return static_cast<float>(freq_ * rate_ / 6.283185307179586); }
     // Mean of cos(2*phase error) over recent symbols: about 1 when locked, about 0 when not.
     float lockMeasure() const { return static_cast<float>(lock_); }
     // Number of carrier measurements made so far (the first one, then one per lost lock).

@@ -102,6 +102,10 @@ Developer: AGcov (BI2QYN)
 - DC blocker (500 Hz high-pass) ahead of the AGC and the carrier loops, on by default: an SDR's centre
   spike, LO leakage or ADC offset otherwise biases the AGC and can fool the fourth-power carrier search.
   Switch it off in the window if a recording genuinely has no DC offset.
+- Carrier acquisition and tracking are capped at ±250 kHz. A GEO L-band downlink's LO/Doppler error is
+  only tens of kHz; without the cap a strong unmodulated interferer could pull the fourth-power search
+  or the loop hundreds of kHz away. If a recording really is offset by more than that, correct the
+  centre frequency first.
 - Soft-decision Viterbi (CCSDS K=7, r=1/2) and RS(255,223) with iterative feedback of corrected bytes.
 - CADU framing, M_PDU/CCSDS packets, LRIT file assembly that tolerates lost packets: a lost packet zero-fills that spot instead of discarding the whole segment.
 - JPEG 2000 / JPEG segment decoding (OpenJPEG, libjpeg-turbo), DES decryption of encrypted segments.

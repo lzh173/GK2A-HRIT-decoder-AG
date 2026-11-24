@@ -25,6 +25,7 @@ constexpr float kPi = 3.14159265358979323846f;
 
 int main() {
     using nadirstation::dsp::DcBlocker;
+    using nadirstation::dsp::PskDemod;
 
     // A constant offset must disappear, and the estimate must converge to it.
     {
@@ -80,6 +81,33 @@ int main() {
         for (int i = 0; i < 1000; ++i) blocker.process({1.0f, 1.0f});
         check(std::isfinite(blocker.estimate().real()) && std::isfinite(blocker.estimate().imag()),
               "invalid parameters fall back safely");
+    }
+
+    // A strong unmodulated carrier far outside the plausible L-band offset must not pull the
+    // fourth-power acquisition across the band: the reported offset is capped at 250 kHz.
+    {
+        PskDemod demod;
+        demod.setQpsk(true);
+        demod.setRectangularPulse(true);
+        demod.configure(6000000.0f, 3000000.0f, 0.5f, 0.02f);
+        std::vector<std::complex<float>> iq(131072);
+        for (std::size_t i = 0; i < iq.size(); ++i) {
+            const double phase = 2.0 * 3.14159265358979323846 * 700000.0 * static_cast<double>(i) / 6000000.0;
+            iq[i] = {static_cast<float>(std::cos(phase)), static_cast<float>(std::sin(phase))};
+        }
+        const auto result = demod.process(iq);
+        check(std::fabs(result.carrierOffsetHz) <= 251000.0f, "CW carrier is not acquired beyond 250 kHz");
+    }
+
+    // A deliberately huge initial offset is clamped when the loop is reset.
+    {
+        PskDemod demod;
+        demod.setQpsk(true);
+        demod.setRectangularPulse(true);
+        demod.configure(6000000.0f, 3000000.0f, 0.5f, 0.02f);
+        demod.setInitialCarrierOffset(1.0f);   // radians/sample, far beyond the allowed range
+        demod.reset();
+        check(std::fabs(demod.carrierOffsetHz()) <= 251000.0f, "initial carrier offset is clamped");
     }
 
     if (g_failures == 0) std::printf("all dsp tests passed\n");
