@@ -212,7 +212,8 @@ if(HRIT_BUILD_GUI)
         target_include_directories(hrit_sdr_android PRIVATE
             "${_libusb_dir}" "${_libusb_dir}/os"
             "${_hackrf_dir}"
-            "${_rtlsdr_dir}/include" "${_rtlsdr_dir}/src")
+            "${_rtlsdr_dir}/include" "${_rtlsdr_dir}/src"
+            "$ENV{ANDROID_NDK_ROOT}/sources/android/native_app_glue")
         target_compile_definitions(hrit_sdr_android PRIVATE HAVE_CONFIG_H=1)
         target_link_libraries(hrit_sdr_android PRIVATE log m)
         set_target_properties(hrit_sdr_android PROPERTIES
